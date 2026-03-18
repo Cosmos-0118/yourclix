@@ -25,3 +25,8 @@ export interface ScanResult {
   paths: string[];
   bytes: number;
 }
+
+export interface UndoOptions extends GlobalOptions {
+  id?: string;
+  retentionDays?: number;
+}
