@@ -24,18 +24,59 @@ export async function devClean(dryRun = false, yes = false): Promise<void> {
     }),
   );
 
-  console.log(`Found ${found.length} cleanup targets.`);
+  const nodeModules = found.filter((entry) =>
+    entry.endsWith(`${path.sep}node_modules`),
+  );
+  const xcodeDerivedData = found.filter((entry) =>
+    entry.includes(
+      `${path.sep}Library${path.sep}Developer${path.sep}Xcode${path.sep}DerivedData${path.sep}`,
+    ),
+  );
+  const otherTargets =
+    found.length - nodeModules.length - xcodeDerivedData.length;
+
+  console.log(chalk.bold("Developer cleanup targets"));
+  console.log(`- Total: ${found.length}`);
+  console.log(`- node_modules: ${nodeModules.length}`);
+  console.log(`- Xcode DerivedData: ${xcodeDerivedData.length}`);
+  if (otherTargets > 0) {
+    console.log(`- Other: ${otherTargets}`);
+  }
+
+  const preview = found.slice(0, 20);
+  if (preview.length > 0) {
+    console.log(chalk.dim("Sample targets (first 20)"));
+    for (const target of preview) {
+      console.log(chalk.dim(`- ${target}`));
+    }
+  }
+
+  if (found.length > preview.length) {
+    console.log(
+      chalk.dim(`...and ${found.length - preview.length} more target(s).`),
+    );
+  }
+
   const approved = await confirm("Proceed with developer cleanup?", yes);
   if (!approved) {
     console.log(chalk.yellow("Cancelled by user."));
     return;
   }
 
+  let removedCount = 0;
+  const failedTargets: Array<{ path: string; reason: string }> = [];
   await progress.step(
     `Removing ${found.length} filesystem targets`,
     async () => {
       for (const target of found) {
-        await removePath(target, dryRun);
+        try {
+          await removePath(target, dryRun);
+          removedCount += 1;
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          failedTargets.push({ path: target, reason: message || "unknown" });
+        }
       }
     },
   );
@@ -55,6 +96,19 @@ export async function devClean(dryRun = false, yes = false): Promise<void> {
     });
     await runCommand("gradle", ["--stop"], { dryRun, allowFailure: true });
   });
+
+  const actionWord = dryRun ? "Would remove" : "Removed";
+  console.log(chalk.bold("Developer cleanup summary"));
+  console.log(chalk.green(`- ${actionWord}: ${removedCount} targets`));
+  console.log(chalk.yellow(`- Failed: ${failedTargets.length} targets`));
+
+  if (failedTargets.length > 0) {
+    const sampleFailed = failedTargets.slice(0, 10);
+    console.log(chalk.dim("Sample failures"));
+    for (const failed of sampleFailed) {
+      console.log(chalk.dim(`- ${failed.path} (${failed.reason})`));
+    }
+  }
 
   console.log(chalk.green("Developer cleanup complete."));
 }
