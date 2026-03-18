@@ -48,6 +48,10 @@ your plugin install <name> [--dry-run]
 your plugin remove <name> [--dry-run]
 your completion zsh
 your completion install [--shell zsh] [--force]
+your terminal clean [--history] [--dry-run] [-y]
+your backup list [--limit 100]
+your backup remove <name> [--dry-run] [-y]
+your backup prune [--days 30] [--dry-run] [-y]
 ```
 
 ## Autocomplete Assistant

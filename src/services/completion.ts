@@ -29,6 +29,7 @@ _your() {
     'startup:Startup/login item manager'
     'plugin:Plugin management'
     'completion:Shell completion assistant'
+    'backup:Backup manager'
     'help:Display help for command'
   )
 
@@ -148,6 +149,23 @@ _your() {
             case "\${words[3]}" in
               install)
                 _arguments '--shell=[Shell type]:shell:(zsh)' '--force[Re-install completion block]'
+                ;;
+            esac
+          fi
+          ;;
+        backup)
+          if (( CURRENT == 3 )); then
+            _values 'backup command' 'list[List backups]' 'remove[Delete one backup item]' 'prune[Delete old backups]'
+          else
+            case "\${words[3]}" in
+              list)
+                _arguments '--limit=[Max rows to show]'
+                ;;
+              remove)
+                _arguments '--dry-run[Preview only]' '-y[Skip confirmation]' '--yes[Skip confirmation]' '1:backup name:_message "backup name"'
+                ;;
+              prune)
+                _arguments '--days=[Age threshold in days]' '--dry-run[Preview only]' '-y[Skip confirmation]' '--yes[Skip confirmation]'
                 ;;
             esac
           fi

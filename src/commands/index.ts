@@ -12,6 +12,8 @@ import { registerPrivacy } from "./privacy.js";
 import { registerStartup } from "./startup.js";
 import { registerPlugin } from "./plugin.js";
 import { registerCompletion } from "./completion.js";
+import { registerTerminal } from "./terminal.js";
+import { registerBackup } from "./backup.js";
 
 export function registerCommands(program: Command): void {
   registerSetup(program);
@@ -27,4 +29,6 @@ export function registerCommands(program: Command): void {
   registerStartup(program);
   registerPlugin(program);
   registerCompletion(program);
+  registerTerminal(program);
+  registerBackup(program);
 }
