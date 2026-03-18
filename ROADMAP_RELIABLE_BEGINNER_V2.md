@@ -227,11 +227,11 @@ Use this section to track completed segments.
   - Notes: Added ruby/rust/go reset targets with post-reset verification and help examples.
 
 - [x] Segment C1: Setup multi-shell idempotence
-  - Commit: to be filled from git history
+  - Commit: 416bfec
   - Notes: Added deterministic managed setup blocks for zsh, bash, and fish in setup flow.
 
 - [ ] Segment C5 (partial): Startup lifecycle completeness
-  - Commit: to be filled from git history
+  - Commit: 416bfec
   - Notes: Added startup enable command with post-action verification; completion/plugin/privacy portions remain.
 
 ## 8) Immediate Next Segment
