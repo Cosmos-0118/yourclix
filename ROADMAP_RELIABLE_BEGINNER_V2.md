@@ -105,8 +105,8 @@ Objective: beginners always know what happened and what to do next.
 
 - [x] B1. Normalize actionable error format across commands
 - [x] B2. Add "next command" guidance on success/failure summaries
-- [ ] B3. Add concise help examples for high-traffic commands (`setup`, `clean`, `doctor`, `net`)
-- [ ] B4. Add severity conventions for doctor output and fix suggestions
+- [x] B3. Add concise help examples for high-traffic commands (`setup`, `clean`, `doctor`, `net`)
+- [x] B4. Add severity conventions for doctor output and fix suggestions
 
 ## Phase C: Feature Depth Upgrades
 
@@ -205,6 +205,14 @@ Use this section to track completed segments.
 - [x] Segment B2: Next-command guidance in summaries
   - Commit: a390a18
   - Notes: Added reusable next-command helper and integrated guidance into dev/startup/network/spotlight success paths.
+
+- [x] Segment B3: Concise command help examples
+  - Commit: to be filled from git history
+  - Notes: Added practical examples to setup/clean/doctor/net help output for beginner discoverability.
+
+- [x] Segment B4: Doctor severity conventions and fix guidance
+  - Commit: to be filled from git history
+  - Notes: Added severity legend, standardized severity markers, and explicit next-step command hints in doctor report output.
 
 ## 8) Immediate Next Segment
 

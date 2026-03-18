@@ -3,7 +3,18 @@ import { netFix, netReset } from "../services/network.js";
 import { withGlobalOptions } from "./helpers.js";
 
 export function registerNet(program: Command): void {
-  const net = program.command("net").description("Network tools");
+  const net = program
+    .command("net")
+    .description("Network tools")
+    .addHelpText(
+      "after",
+      `
+Examples:
+  your net fix
+  your net reset --dry-run
+  your net reset -y
+`,
+    );
 
   withGlobalOptions(
     net.command("fix").description("Apply safe network fixes"),

@@ -244,7 +244,29 @@ export function printDoctorSummary(report: DoctorReport): void {
     console.log(chalk.green("No major issues found."));
   } else {
     const order = ["critical", "warn", "info"] as const;
+    const severityMeta: Record<
+      (typeof order)[number],
+      { header: string; marker: string; color: (text: string) => string }
+    > = {
+      critical: {
+        header: "CRITICAL",
+        marker: "[CRIT]",
+        color: chalk.red,
+      },
+      warn: {
+        header: "WARNING",
+        marker: "[WARN]",
+        color: chalk.yellow,
+      },
+      info: {
+        header: "INFO",
+        marker: "[INFO]",
+        color: chalk.cyan,
+      },
+    };
+
     console.log(chalk.bold("System health report"));
+    console.log(chalk.dim("Severity legend: [CRIT] immediate action, [WARN] should fix soon, [INFO] optional optimization."));
 
     for (const severity of order) {
       const group = report.issues.filter((issue) => (issue.severity ?? "warn") === severity);
@@ -252,13 +274,15 @@ export function printDoctorSummary(report: DoctorReport): void {
         continue;
       }
 
-      console.log(chalk.bold(`\n${severity.toUpperCase()}`));
+      const meta = severityMeta[severity];
+      console.log(meta.color(chalk.bold(`\n${meta.header}`)));
       for (const issue of group) {
-        console.log(chalk.yellow(`- ${issue.title}: ${issue.description}`));
+        console.log(meta.color(`- ${meta.marker} ${issue.title}: ${issue.description}`));
         const recommended = issue.recommendedCommand ?? issue.command;
         if (recommended) {
-          console.log(`  You can address this with: ${recommended}`);
+          console.log(`  Next step: ${recommended}`);
         }
+        console.log(chalk.dim(`  Safe auto-fix: ${issue.safeToFix ? "yes" : "no"}`));
       }
     }
   }

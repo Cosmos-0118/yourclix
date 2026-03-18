@@ -19,7 +19,16 @@ export function registerClean(program: Command): void {
       .option("--system", "system-wide cleanup mode (advanced)")
       .option("--days <days>", "delete only files older than this many days")
       .option("--verify", "run cleaner self-check and exit")
-      .option("--mode <mode>", "run level: basic | deep | system", "basic"),
+      .option("--mode <mode>", "run level: basic | deep | system", "basic")
+      .addHelpText(
+        "after",
+        `
+Examples:
+  your clean --mode basic
+  your clean --mode deep --days 14 --dry-run
+  your clean --system -y
+`,
+      ),
   ).action(async (options) => {
     const mode = resolveRunLevel(options);
 
