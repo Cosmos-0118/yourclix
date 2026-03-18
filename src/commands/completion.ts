@@ -2,6 +2,7 @@ import { Command } from "commander";
 import {
   installZshCompletion,
   printZshCompletionScript,
+  uninstallZshCompletion,
 } from "../services/completion.js";
 
 export function registerCompletion(program: Command): void {
@@ -29,5 +30,19 @@ export function registerCompletion(program: Command): void {
       }
 
       await installZshCompletion(Boolean(options.force));
+    });
+
+  completion
+    .command("uninstall")
+    .description("Uninstall shell completion")
+    .option("--shell <shell>", "target shell", "zsh")
+    .action(async (options) => {
+      if (options.shell !== "zsh") {
+        throw new Error(
+          `Unsupported shell '${options.shell}'. Supported shells: zsh`,
+        );
+      }
+
+      await uninstallZshCompletion();
     });
 }

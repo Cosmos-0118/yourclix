@@ -116,15 +116,15 @@ Objective: make each feature genuinely useful day-to-day.
 - [x] C2. clean: remove scale limits, add chunked progress and larger category coverage
 - [x] C3. doctor/fix: expand checks and auto-fix mappings
 - [x] C4. dev: broaden ecosystem coverage (node/python/ruby/rust/go basics)
-- [ ] C5. completion/plugin/privacy/startup: fill core missing workflows
+- [x] C5. completion/plugin/privacy/startup: fill core missing workflows
 
 ## Phase D: Quality Guardrails
 
 Objective: reduce regressions while keeping implementation simple.
 
-- [ ] D1. Add targeted smoke tests for destructive and reset commands
+- [x] D1. Add targeted smoke tests for destructive and reset commands
 - [ ] D2. Add command-level verification helpers where duplicated
-- [ ] D3. Add docs page: "If reset fails, do this manually"
+- [x] D3. Add docs page: "If reset fails, do this manually"
 
 ## 6) Feature-by-Feature Upgrade Backlog
 
@@ -230,9 +230,17 @@ Use this section to track completed segments.
   - Commit: 416bfec
   - Notes: Added deterministic managed setup blocks for zsh, bash, and fish in setup flow.
 
-- [ ] Segment C5 (partial): Startup lifecycle completeness
-  - Commit: 416bfec
-  - Notes: Added startup enable command with post-action verification; completion/plugin/privacy portions remain.
+- [x] Segment C5: Completion/plugin/privacy/startup core workflows
+  - Commit: to be filled from git history
+  - Notes: Added startup enable, completion uninstall, plugin list/search, and privacy browser-aware cleanup behavior.
+
+- [x] Segment D1: Targeted smoke checks
+  - Commit: to be filled from git history
+  - Notes: Added lightweight smoke script for non-destructive command-level checks.
+
+- [x] Segment D3: Manual recovery documentation
+  - Commit: to be filled from git history
+  - Notes: Added a dedicated manual recovery guide for reset/reconfigure failures.
 
 ## 8) Immediate Next Segment
 

@@ -1,9 +1,29 @@
 import { Command } from "commander";
-import { installPlugin, removePlugin } from "../services/plugin.js";
+import {
+  installPlugin,
+  listPlugins,
+  removePlugin,
+  searchPlugins,
+} from "../services/plugin.js";
 import { withGlobalOptions } from "./helpers.js";
 
 export function registerPlugin(program: Command): void {
   const plugin = program.command("plugin").description("Plugin management");
+
+  plugin
+    .command("list")
+    .description("List installed plugins")
+    .action(async () => {
+      await listPlugins();
+    });
+
+  plugin
+    .command("search")
+    .description("Search plugins")
+    .argument("<query>", "search query")
+    .action(async (query: string) => {
+      await searchPlugins(query);
+    });
 
   withGlobalOptions(
     plugin
