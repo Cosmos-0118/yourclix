@@ -199,7 +199,7 @@ Use this section to track completed segments.
   - Notes: Added before/after login item verification and manual recovery checklist when disable verification fails.
 
 - [x] Segment B1: Normalized actionable error format
-  - Commit: to be filled from git history
+  - Commit: 84e8610
   - Notes: Added shared actionable error model and formatter, integrated in reset/reconfigure failure paths.
 
 ## 8) Immediate Next Segment
