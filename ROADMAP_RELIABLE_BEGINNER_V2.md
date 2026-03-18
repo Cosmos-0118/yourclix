@@ -97,7 +97,7 @@ Objective: make all reset/reconfigure operations verify outcomes and provide man
 - [x] A2. Network reset: verify plist reset outcome + service checks + manual recovery checklist
 - [x] A3. Spotlight reset: verify indexing state after reset + manual recovery checklist
 - [x] A4. Dev reset: verify tool reinstall/reset result and provide manual steps when partial
-- [ ] A5. Startup reset/disable flows: verify actual login item state changed
+- [x] A5. Startup reset/disable flows: verify actual login item state changed
 
 ## Phase B: Beginner UX and Error Clarity
 
@@ -193,6 +193,10 @@ Use this section to track completed segments.
 - [x] Segment A4: Dev reset verification and manual fallback
   - Commit: cb7a281
   - Notes: Added post-reset verification for node/python and manual recovery checklist on partial failure.
+
+- [x] Segment A5: Startup disable verification and manual fallback
+  - Commit: to be filled from git history
+  - Notes: Added before/after login item verification and manual recovery checklist when disable verification fails.
 
 ## 8) Immediate Next Segment
 
