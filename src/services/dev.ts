@@ -3,9 +3,45 @@ import path from "node:path";
 import chalk from "chalk";
 import fg from "fast-glob";
 import { runCommand } from "../core/exec.js";
+import { buildManualRecoveryDetails } from "../core/reconfigure.js";
 import { CommandProgress } from "../core/progress.js";
 import { removePath } from "../core/fs-utils.js";
 import { confirm } from "../core/prompt.js";
+
+interface DevResetPlan {
+  brewPackage: string;
+  verifyCommand: string;
+  verifyArgs: string[];
+}
+
+function getDevResetPlan(tool: string): DevResetPlan {
+  switch (tool) {
+    case "node":
+      return {
+        brewPackage: "node",
+        verifyCommand: "node",
+        verifyArgs: ["--version"],
+      };
+    case "python":
+      return {
+        brewPackage: "python",
+        verifyCommand: "python3",
+        verifyArgs: ["--version"],
+      };
+    default:
+      throw new Error(`Unsupported tool reset target: ${tool}`);
+  }
+}
+
+function buildDevManualRecovery(tool: string, plan: DevResetPlan): string[] {
+  const verifyCommand = `${plan.verifyCommand} ${plan.verifyArgs.join(" ")}`;
+  return buildManualRecoveryDetails("Manual recovery checklist:", [
+    `Run: brew uninstall ${plan.brewPackage}`,
+    `Run: brew install ${plan.brewPackage}`,
+    `Run: ${verifyCommand}`,
+    `Run: your dev reset ${tool}`,
+  ]);
+}
 
 export async function devClean(dryRun = false, yes = false): Promise<void> {
   const progress = new CommandProgress("Developer Cleanup", 3);
@@ -114,40 +150,76 @@ export async function devClean(dryRun = false, yes = false): Promise<void> {
 }
 
 export async function devReset(tool: string, dryRun = false): Promise<void> {
-  const progress = new CommandProgress(`Developer Reset (${tool})`, 2);
-  switch (tool) {
-    case "node": {
-      await progress.step("Uninstalling existing Node", async () =>
-        runCommand("brew", ["uninstall", "node"], {
-          dryRun,
-          allowFailure: true,
-        }),
-      );
-      await progress.step("Installing fresh Node", async () =>
-        runCommand("brew", ["install", "node"], {
-          dryRun,
-          allowFailure: true,
-        }),
-      );
-      break;
+  const plan = getDevResetPlan(tool);
+  const title =
+    tool === "node" ? "Node"
+    : tool === "python" ? "Python"
+    : tool;
+  const progress = new CommandProgress(`Developer Reset (${tool})`, 3);
+
+  const uninstallResult = await progress.step(
+    `Uninstalling existing ${title}`,
+    async () =>
+      runCommand("brew", ["uninstall", plan.brewPackage], {
+        dryRun,
+        allowFailure: true,
+      }),
+  );
+
+  const installResult = await progress.step(
+    `Installing fresh ${title}`,
+    async () =>
+      runCommand("brew", ["install", plan.brewPackage], {
+        dryRun,
+        allowFailure: true,
+      }),
+  );
+
+  const verifyResult = await progress.step(
+    `Verifying ${title} is available`,
+    async () =>
+      runCommand(plan.verifyCommand, plan.verifyArgs, {
+        dryRun,
+        allowFailure: true,
+      }),
+  );
+
+  const failedDetails: string[] = [];
+  if (uninstallResult.code !== 0) {
+    failedDetails.push(
+      `Uninstall failed: ${uninstallResult.stderr || uninstallResult.stdout || "unknown error"}`,
+    );
+  }
+  if (installResult.code !== 0) {
+    failedDetails.push(
+      `Install failed: ${installResult.stderr || installResult.stdout || "unknown error"}`,
+    );
+  }
+  if (verifyResult.code !== 0) {
+    failedDetails.push(
+      `Verification failed: ${verifyResult.stderr || verifyResult.stdout || "unknown error"}`,
+    );
+  }
+
+  if (!dryRun && failedDetails.length > 0) {
+    console.log(chalk.bold(`Developer reset failed for ${tool}.`));
+    for (const detail of failedDetails) {
+      console.log(chalk.yellow(`- ${detail}`));
     }
-    case "python": {
-      await progress.step("Uninstalling existing Python", async () =>
-        runCommand("brew", ["uninstall", "python"], {
-          dryRun,
-          allowFailure: true,
-        }),
-      );
-      await progress.step("Installing fresh Python", async () =>
-        runCommand("brew", ["install", "python"], {
-          dryRun,
-          allowFailure: true,
-        }),
-      );
-      break;
+
+    for (const line of buildDevManualRecovery(tool, plan)) {
+      console.log(chalk.dim(line));
     }
-    default:
-      throw new Error(`Unsupported tool reset target: ${tool}`);
+
+    throw new Error(`Developer reset verification failed for ${tool}.`);
+  }
+
+  if (!dryRun) {
+    console.log(
+      chalk.green(
+        `Verification output: ${(verifyResult.stdout || verifyResult.stderr || "(no output)").split("\n")[0]}`,
+      ),
+    );
   }
 
   console.log(chalk.green(`Developer environment reset complete for ${tool}.`));
