@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import chalk from "chalk";
 import { ActionableError } from "../../core/actionable-error.js";
+import { printNextCommands } from "../../core/next-steps.js";
 import { runCommand } from "../../core/exec.js";
 import { buildManualRecoveryDetails } from "../../core/reconfigure.js";
 import { confirm } from "../../core/prompt.js";
@@ -537,4 +538,8 @@ export async function netReset(dryRun = false, yes = false): Promise<void> {
   }
 
   console.log(chalk.green("Network reset completed."));
+  printNextCommands("Next commands:", [
+    "your net fix",
+    "your doctor",
+  ]);
 }

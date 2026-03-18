@@ -1,5 +1,6 @@
 import chalk from "chalk";
 import { ActionableError } from "../core/actionable-error.js";
+import { printNextCommands } from "../core/next-steps.js";
 import { runCommand } from "../core/exec.js";
 import { CommandProgress } from "../core/progress.js";
 import { buildManualRecoveryDetails } from "../core/reconfigure.js";
@@ -471,4 +472,8 @@ export async function spotlightReset(
   console.log(
     chalk.dim("Tip: Use 'your spotlight status' to watch indexing progress."),
   );
+  printNextCommands("Next commands:", [
+    "your spotlight status",
+    "your doctor",
+  ]);
 }

@@ -5,6 +5,7 @@ import fg from "fast-glob";
 import { ActionableError } from "../core/actionable-error.js";
 import { runCommand } from "../core/exec.js";
 import { buildManualRecoveryDetails } from "../core/reconfigure.js";
+import { printNextCommands } from "../core/next-steps.js";
 import { CommandProgress } from "../core/progress.js";
 import { removePath } from "../core/fs-utils.js";
 import { confirm } from "../core/prompt.js";
@@ -236,4 +237,8 @@ export async function devReset(tool: string, dryRun = false): Promise<void> {
   }
 
   console.log(chalk.green(`Developer environment reset complete for ${tool}.`));
+  printNextCommands("Next commands:", [
+    `your doctor`,
+    `${plan.verifyCommand} ${plan.verifyArgs.join(" ")}`,
+  ]);
 }

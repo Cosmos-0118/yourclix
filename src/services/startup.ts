@@ -2,6 +2,7 @@ import chalk from "chalk";
 import { ActionableError } from "../core/actionable-error.js";
 import { runCommand } from "../core/exec.js";
 import { buildManualRecoveryDetails } from "../core/reconfigure.js";
+import { printNextCommands } from "../core/next-steps.js";
 import { CommandProgress } from "../core/progress.js";
 
 function parseStartupItems(raw: string): string[] {
@@ -57,6 +58,10 @@ export async function listStartupItems(): Promise<void> {
   for (const item of items) {
     console.log(`- ${item}`);
   }
+
+  printNextCommands("Next commands:", [
+    "your startup disable <name>",
+  ]);
 }
 
 export async function disableStartupItem(
@@ -131,8 +136,10 @@ export async function disableStartupItem(
         `Startup item '${name}' was not present before disable; no change was required.`,
       ),
     );
+    printNextCommands("Next commands:", ["your startup list"]);
     return;
   }
 
   console.log(chalk.green(`Startup item disabled: ${name}`));
+  printNextCommands("Next commands:", ["your startup list"]);
 }

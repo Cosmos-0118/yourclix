@@ -104,7 +104,7 @@ Objective: make all reset/reconfigure operations verify outcomes and provide man
 Objective: beginners always know what happened and what to do next.
 
 - [x] B1. Normalize actionable error format across commands
-- [ ] B2. Add "next command" guidance on success/failure summaries
+- [x] B2. Add "next command" guidance on success/failure summaries
 - [ ] B3. Add concise help examples for high-traffic commands (`setup`, `clean`, `doctor`, `net`)
 - [ ] B4. Add severity conventions for doctor output and fix suggestions
 
@@ -201,6 +201,10 @@ Use this section to track completed segments.
 - [x] Segment B1: Normalized actionable error format
   - Commit: 84e8610
   - Notes: Added shared actionable error model and formatter, integrated in reset/reconfigure failure paths.
+
+- [x] Segment B2: Next-command guidance in summaries
+  - Commit: to be filled from git history
+  - Notes: Added reusable next-command helper and integrated guidance into dev/startup/network/spotlight success paths.
 
 ## 8) Immediate Next Segment
 
