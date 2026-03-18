@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import chalk from "chalk";
 import { runCommand } from "../../core/exec.js";
+import { buildManualRecoveryDetails } from "../../core/reconfigure.js";
 import { confirm } from "../../core/prompt.js";
 import { CommandProgress } from "../../core/progress.js";
 import { createNetworkLogger } from "./logger.js";
@@ -31,6 +32,16 @@ const NETWORK_TARGETS: NetworkTarget[] = [
 const SYSTEM_CONFIG_DIR = "/Library/Preferences/SystemConfiguration";
 const POLICY_HINT =
   "Permission denied by macOS security policy. Grant Full Disk Access to your terminal app and VS Code, then retry.";
+
+function buildNetworkManualRecovery(backupDir: string): string[] {
+  return buildManualRecoveryDetails("Manual recovery checklist:", [
+    "Open System Settings > Network and confirm your Wi-Fi/Ethernet services are present.",
+    `If services are broken, restore backup files from ${backupDir} to /Library/Preferences/SystemConfiguration using sudo cp.`,
+    "Run: sudo killall -HUP mDNSResponder",
+    "Run: networksetup -listallnetworkservices",
+    "If still broken, reboot macOS and re-run: your net reset --yes",
+  ]);
+}
 
 function isNoSuchFile(detail: string): boolean {
   return detail.toLowerCase().includes("no such file or directory");
@@ -68,7 +79,7 @@ export async function netReset(dryRun = false, yes = false): Promise<void> {
 
   const logger = await createNetworkLogger("reset");
   const steps: NetworkStepResult[] = [];
-  const progress = new CommandProgress("Network Reset", 7);
+  const progress = new CommandProgress("Network Reset", 8);
   let copiedFiles = 0;
   let deletedFiles = 0;
 
@@ -331,6 +342,51 @@ export async function netReset(dryRun = false, yes = false): Promise<void> {
         }),
       );
 
+      steps.push(
+        await progress.step("Verifying plist reset outcome", async () => {
+          if (dryRun) {
+            return {
+              name: "Verify plist reset outcome",
+              critical: true,
+              status: "skipped",
+              details: ["Dry-run: plist verification skipped."],
+            } satisfies NetworkStepResult;
+          }
+
+          const failures: string[] = [];
+
+          for (const target of NETWORK_TARGETS) {
+            if (target.optional) {
+              continue;
+            }
+
+            const existsCheck = await runCommand(
+              "sudo",
+              ["-n", "test", "-e", target.path],
+              {
+                allowFailure: true,
+              },
+            );
+
+            if (existsCheck.code === 0) {
+              failures.push(
+                `${target.path}: still present after reset (expected deleted).`,
+              );
+            }
+          }
+
+          return {
+            name: "Verify plist reset outcome",
+            critical: true,
+            status: failures.length > 0 ? "failed" : "success",
+            details:
+              failures.length > 0 ?
+                [...failures, ...buildNetworkManualRecovery(backupDir)]
+              : ["Required network plist targets are no longer present."],
+          } satisfies NetworkStepResult;
+        }),
+      );
+
       if (hasCriticalFailure(steps)) {
         progress.tick("Skipping mDNS restart due to earlier critical failure");
         steps.push({
@@ -391,16 +447,16 @@ export async function netReset(dryRun = false, yes = false): Promise<void> {
               .filter((line) => line && !line.startsWith("An asterisk"));
 
             if (rows.length === 0) {
-              const noChange =
-                !dryRun && copiedFiles === 0 && deletedFiles === 0;
+              const noChange = !dryRun && copiedFiles === 0 && deletedFiles === 0;
               return {
                 name: "Verify network services",
-                critical: false,
-                status: "skipped",
+                critical: !noChange,
+                status: noChange ? "skipped" : "failed",
                 details: [
                   noChange ?
                     "No network services reported; reset changed 0 files, so verification is informational only."
-                  : "No active network services found. Reconfigure in System Settings > Network.",
+                  : "No active network services found after reset.",
+                  ...(noChange ? [] : buildNetworkManualRecovery(backupDir)),
                 ],
               } satisfies NetworkStepResult;
             }
