@@ -33,6 +33,16 @@ npm install
 npm run build
 npm install -g .
 
+GLOBAL_BIN="$(npm prefix -g)/bin/your"
+if [[ -e "$GLOBAL_BIN" ]]; then
+	chmod +x "$GLOBAL_BIN" >/dev/null 2>&1 || true
+	if [[ -L "$GLOBAL_BIN" ]]; then
+		GLOBAL_TARGET="$(readlink "$GLOBAL_BIN")"
+		GLOBAL_TARGET_ABS="$(cd "$(dirname "$GLOBAL_BIN")" && cd "$(dirname "$GLOBAL_TARGET")" && pwd)/$(basename "$GLOBAL_TARGET")"
+		chmod +x "$GLOBAL_TARGET_ABS" >/dev/null 2>&1 || true
+	fi
+fi
+
 if command -v your >/dev/null 2>&1; then
 	your completion install --force >/dev/null 2>&1 || true
 fi

@@ -7,6 +7,7 @@ export interface GlobalOptions {
 
 export interface CleanerOptions extends GlobalOptions {
   mode: RunLevel;
+  olderThanDays?: number;
 }
 
 export interface Issue {

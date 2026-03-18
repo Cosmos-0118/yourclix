@@ -9,7 +9,7 @@ Tagline: One command. Your Mac, optimized.
 One-line installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yourclix/your/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Cosmos-0118/yourclix/main/scripts/install.sh | bash
 ```
 
 Local development install:
@@ -30,7 +30,7 @@ your
 
 ```bash
 your setup [--fast] [--apps] [--profile minimal|webdev|full] [--app-mode none|minimal|webdev|full] [--config ./setup.config.json] [--debug] [--dry-run]
-your clean [--mode basic|deep|system] [--verify] [--dry-run] [-y]
+your clean [--mode basic|deep|system] [--days 30] [--verify] [--dry-run] [-y]
 your net fix [--dry-run]
 your net reset [--dry-run] [-y]
 your spotlight status

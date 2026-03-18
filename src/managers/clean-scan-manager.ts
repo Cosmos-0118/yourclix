@@ -13,6 +13,15 @@ function join(home: string, target: string): string {
   return path.join(home, target);
 }
 
+const projectRoots = [
+  "Developer",
+  "Projects",
+  "Code",
+  "Work",
+  "Desktop",
+  "Downloads",
+];
+
 function filterByRunLevel(
   mode: RunLevel,
   categories: ScanCategory[],
@@ -257,22 +266,19 @@ export function getCleanerScanCategories(mode: RunLevel): ScanCategory[] {
       category: "Developer Project Junk",
       risky: true,
       globs: [
-        join(home, "Developer/**/node_modules"),
-        join(home, "Projects/**/node_modules"),
-        join(home, "Code/**/node_modules"),
-        join(home, "Work/**/node_modules"),
-        join(home, "Desktop/**/node_modules"),
-        join(home, "Downloads/**/node_modules"),
-        join(home, "**/dist"),
-        join(home, "**/build"),
-        join(home, "**/.cache"),
-        join(home, "**/.parcel-cache"),
-        join(home, "**/.svelte-kit"),
-        join(home, "**/.turbo"),
-        join(home, "**/.next/cache"),
-        join(home, "**/__pycache__"),
-        join(home, "**/.pytest_cache"),
-        join(home, "**/.mypy_cache"),
+        ...projectRoots.flatMap((root) => [
+          join(home, `${root}/**/node_modules`),
+          join(home, `${root}/**/dist`),
+          join(home, `${root}/**/build`),
+          join(home, `${root}/**/.cache`),
+          join(home, `${root}/**/.parcel-cache`),
+          join(home, `${root}/**/.svelte-kit`),
+          join(home, `${root}/**/.turbo`),
+          join(home, `${root}/**/.next/cache`),
+          join(home, `${root}/**/__pycache__`),
+          join(home, `${root}/**/.pytest_cache`),
+          join(home, `${root}/**/.mypy_cache`),
+        ]),
       ],
     },
     {

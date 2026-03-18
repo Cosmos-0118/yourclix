@@ -11,11 +11,12 @@
     "scripts"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && chmod +x dist/index.js",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "postinstall": "chmod +x dist/index.js || true"
   },
   "keywords": [
     "macos",

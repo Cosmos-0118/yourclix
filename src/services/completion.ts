@@ -52,7 +52,7 @@ _your() {
           _arguments '--fast[Non-interactive setup]' '--apps[Install common desktop apps]' '--profile=[Setup profile]:profile:(minimal webdev full)' '--app-mode=[Desktop app mode]:mode:(none minimal webdev full)' '--config=[Path to setup JSON config]' '--debug[Verbose setup logging]' '--dry-run[Preview only]'
           ;;
         clean)
-          _arguments '--mode=[Run level]:mode:(basic deep system)' '--safe[Legacy alias for basic mode]' '--deep[Legacy alias for deep mode]' '--system[System-level cleanup mode]' '--verify[Run cleaner self-check]' '--dry-run[Preview only]' '-y[Skip confirmation]' '--yes[Skip confirmation]'
+          _arguments '--mode=[Run level]:mode:(basic deep system)' '--safe[Legacy alias for basic mode]' '--deep[Legacy alias for deep mode]' '--system[System-level cleanup mode]' '--days=[Delete only files older than N days]:days' '--verify[Run cleaner self-check]' '--dry-run[Preview only]' '-y[Skip confirmation]' '--yes[Skip confirmation]'
           ;;
         net)
           if (( CURRENT == 3 )); then

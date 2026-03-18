@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_URL="${YOUR_REPO_URL:-https://github.com/yourclix/your}"
+REPO_URL="${YOUR_REPO_URL:-https://github.com/Cosmos-0118/yourclix}"
 PACKAGE_NAME="${YOUR_PACKAGE_NAME:-@yourclix/your}"
+REPO_REF="${YOUR_REPO_REF:-main}"
+TARGET_PACKAGE_NAME="${YOUR_TARGET_PACKAGE_NAME:-@yourclix/your}"
+INSTALL_HOME="${YOUR_INSTALL_HOME:-$HOME/.your}"
+SOURCE_DIR="${YOUR_SOURCE_DIR:-$INSTALL_HOME/source}"
 
 print_step() {
   echo "[your-install] $1"
@@ -57,9 +61,96 @@ ensure_path() {
   export PATH="$HOME/.npm-global/bin:$PATH"
 }
 
+fix_global_bin_permissions() {
+  local global_bin
+  global_bin="$(npm prefix -g)/bin/your"
+  if [[ -e "$global_bin" ]]; then
+    chmod +x "$global_bin" >/dev/null 2>&1 || true
+    if [[ -L "$global_bin" ]]; then
+      local global_target
+      local global_target_abs
+      global_target="$(readlink "$global_bin")"
+      global_target_abs="$(cd "$(dirname "$global_bin")" && cd "$(dirname "$global_target")" && pwd)/$(basename "$global_target")"
+      chmod +x "$global_target_abs" >/dev/null 2>&1 || true
+    fi
+  fi
+}
+
+resolve_global_package_path() {
+  local package_name="$1"
+  local global_root
+  global_root="$(npm prefix -g)/lib/node_modules"
+
+  if [[ "$package_name" == @*/* ]]; then
+    local scope
+    local name
+    scope="${package_name%%/*}"
+    name="${package_name##*/}"
+    echo "${global_root}/${scope}/${name}"
+    return
+  fi
+
+  echo "${global_root}/${package_name}"
+}
+
+repair_global_package_conflict() {
+  local package_name="$1"
+  local install_path
+  install_path="$(resolve_global_package_path "$package_name")"
+
+  if [[ -L "$install_path" ]]; then
+    print_step "Removing conflicting symlink install at ${install_path}"
+    rm -f "$install_path"
+    return
+  fi
+
+  if [[ -e "$install_path" && ! -d "$install_path" ]]; then
+    print_step "Removing invalid install artifact at ${install_path}"
+    rm -f "$install_path"
+  fi
+}
+
 install_cli() {
   print_step "Installing ${PACKAGE_NAME} globally"
-  npm install -g "$PACKAGE_NAME"
+  if npm install -g "$PACKAGE_NAME"; then
+    fix_global_bin_permissions
+    return
+  fi
+
+  local git_source
+  git_source="${REPO_URL}.git"
+
+  repair_global_package_conflict "$TARGET_PACKAGE_NAME"
+  print_step "npm package not available; installing from repository source"
+  mkdir -p "$INSTALL_HOME"
+
+  if [[ -d "$SOURCE_DIR/.git" ]]; then
+    print_step "Updating local source at ${SOURCE_DIR}"
+    if ! (
+      cd "$SOURCE_DIR"
+      git fetch --depth 1 origin "$REPO_REF"
+      git checkout "$REPO_REF"
+      git pull --ff-only origin "$REPO_REF"
+    ); then
+      print_step "Local source update failed; re-cloning fresh copy"
+      rm -rf "$SOURCE_DIR"
+      git clone --depth 1 --branch "$REPO_REF" "$git_source" "$SOURCE_DIR"
+    fi
+  else
+    print_step "Cloning ${git_source} (${REPO_REF}) to ${SOURCE_DIR}"
+    rm -rf "$SOURCE_DIR"
+    git clone --depth 1 --branch "$REPO_REF" "$git_source" "$SOURCE_DIR"
+  fi
+
+  print_step "Building CLI from source"
+  (
+    cd "$SOURCE_DIR"
+    npm install
+    npm run build
+    npm install -g .
+  )
+
+  fix_global_bin_permissions
 }
 
 install_completion() {
@@ -76,7 +167,15 @@ install_completion() {
 }
 
 final_message() {
+  local global_prefix
+  local global_bin
+  global_prefix="$(npm prefix -g)"
+  global_bin="${global_prefix}/bin/your"
+
   print_step "Installation complete"
+  echo "Stored source: ${SOURCE_DIR}"
+  echo "Global prefix: ${global_prefix}"
+  echo "CLI binary: ${global_bin}"
   echo "Run: your --help"
   echo "If command is not found, restart terminal or run: source ~/.zprofile"
 }

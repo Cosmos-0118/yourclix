@@ -13,16 +13,21 @@ import {
 import { getCleanerScanCategories } from "../managers/clean-scan-manager.js";
 import { confirm } from "../core/prompt.js";
 import type { CleanerOptions, ScanResult } from "../core/types.js";
+import {
+  applyCleanerHeuristics,
+  getCleanerHeuristicPolicy,
+  type HeuristicSkipRecord,
+  type ValidatedDeletionCandidate,
+} from "./clean-heuristics.js";
 
 interface DeletionCandidate {
   path: string;
   bytes: number;
+  category: string;
+  mtimeMs: number;
 }
 
-interface SkipRecord {
-  path: string;
-  reason: string;
-}
+type SkipRecord = HeuristicSkipRecord;
 
 export async function scanCleanerTargets(
   mode: CleanerOptions["mode"],
@@ -92,13 +97,66 @@ export async function executeCleaner(
   results: ScanResult[],
   options: CleanerOptions,
 ): Promise<void> {
-  const targets = results.flatMap((item) => item.paths);
+  const targets = results.flatMap((item) =>
+    item.paths.map((targetPath) => ({
+      path: targetPath,
+      category: item.category,
+    })),
+  );
+
   if (!targets.length) {
     return;
   }
 
+  const policy = getCleanerHeuristicPolicy(
+    options.mode,
+    options.olderThanDays ?? 14,
+  );
+
+  const scanProgress = new CommandProgress("Cleanup Preflight", 1);
+  const { candidates, skipped } = await scanProgress.step(
+    "Validating target paths",
+    async () => {
+      const validCandidates: ValidatedDeletionCandidate[] = [];
+      const skippedTargets: SkipRecord[] = [];
+
+      for (const target of targets) {
+        try {
+          const stat = await fs.lstat(target.path);
+          const bytes = await pathSizeFast(target.path);
+          validCandidates.push({
+            path: target.path,
+            category: target.category,
+            bytes,
+            mtimeMs: stat.mtimeMs,
+          });
+        } catch (error) {
+          skippedTargets.push({
+            path: target.path,
+            reason: getSkipReason(error),
+          });
+        }
+      }
+
+      const filtered = applyCleanerHeuristics(validCandidates, policy);
+      return {
+        candidates: filtered.candidates,
+        skipped: [...skippedTargets, ...filtered.skipped],
+      };
+    },
+  );
+
+  if (!candidates.length) {
+    console.log(
+      chalk.yellow("No eligible cleanup candidates after safety checks."),
+    );
+    printSkippedDetails(skipped);
+    return;
+  }
+
   const approved = await confirm(
-    `Delete ${targets.length} paths in ${options.mode.toUpperCase()} mode?`,
+    `Delete ${candidates.length} paths in ${options.mode.toUpperCase()} mode? ` +
+      `(risky paths must be older than ${policy.olderThanDays} day(s))`,
     Boolean(options.yes),
   );
 
@@ -106,30 +164,6 @@ export async function executeCleaner(
     console.log(chalk.yellow("Cancelled by user."));
     return;
   }
-
-  const scanProgress = new CommandProgress("Cleanup Preflight", 1);
-  const { candidates, skipped } = await scanProgress.step(
-    "Validating target paths",
-    async () => {
-      const validCandidates: DeletionCandidate[] = [];
-      const skippedTargets: SkipRecord[] = [];
-
-      for (const target of targets) {
-        try {
-          await fs.lstat(target);
-          const bytes = await pathSizeFast(target);
-          validCandidates.push({ path: target, bytes });
-        } catch (error) {
-          skippedTargets.push({
-            path: target,
-            reason: getSkipReason(error),
-          });
-        }
-      }
-
-      return { candidates: validCandidates, skipped: skippedTargets };
-    },
-  );
 
   const progress = new CommandProgress("Cleanup Execution", 1);
   let deletedCount = 0;
@@ -157,28 +191,15 @@ export async function executeCleaner(
   console.log(chalk.green(`- ${actionWord}: ${deletedCount} paths`));
   console.log(chalk.yellow(`- Skipped: ${skippedCount} paths`));
   console.log(
+    chalk.cyan(
+      `- Retention gate: risky targets older than ${policy.olderThanDays} day(s)`,
+    ),
+  );
+  console.log(
     chalk.cyan(`- ${reclaimedLabel}: ${bytesToHuman(reclaimedBytes)}`),
   );
 
-  if (skippedCount > 0) {
-    const reasonCounts = new Map<string, number>();
-    for (const entry of skipped) {
-      reasonCounts.set(entry.reason, (reasonCounts.get(entry.reason) ?? 0) + 1);
-    }
-
-    console.log(chalk.bold("Skipped reasons"));
-    for (const [reason, count] of reasonCounts) {
-      console.log(`- ${reason}: ${count}`);
-    }
-
-    const sample = skipped.slice(0, 5);
-    if (sample.length > 0) {
-      console.log(chalk.dim("Sample skipped paths"));
-      for (const entry of sample) {
-        console.log(chalk.dim(`- ${entry.path} (${entry.reason})`));
-      }
-    }
-  }
+  printSkippedDetails(skipped);
 }
 
 function getSkipReason(error: unknown): string {
@@ -267,5 +288,29 @@ export async function runCleanerSelfCheck(
     console.log(chalk.green("Cleaner self-check passed."));
   } finally {
     await fs.rm(testDir, { recursive: true, force: true });
+  }
+}
+
+function printSkippedDetails(skipped: SkipRecord[]): void {
+  if (skipped.length === 0) {
+    return;
+  }
+
+  const reasonCounts = new Map<string, number>();
+  for (const entry of skipped) {
+    reasonCounts.set(entry.reason, (reasonCounts.get(entry.reason) ?? 0) + 1);
+  }
+
+  console.log(chalk.bold("Skipped reasons"));
+  for (const [reason, count] of reasonCounts) {
+    console.log(`- ${reason}: ${count}`);
+  }
+
+  const sample = skipped.slice(0, 5);
+  if (sample.length > 0) {
+    console.log(chalk.dim("Sample skipped paths"));
+    for (const entry of sample) {
+      console.log(chalk.dim(`- ${entry.path} (${entry.reason})`));
+    }
   }
 }
