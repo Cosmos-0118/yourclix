@@ -23,7 +23,10 @@ const FEATURE_REQUIREMENTS: Record<string, Requirement[]> = {
     { command: "networksetup", level: "required" },
     { command: "dscacheutil", level: "required" },
   ],
-  "net reset": [{ command: "sudo", level: "required" }],
+  "net reset": [
+    { command: "sudo", level: "required" },
+    { command: "networksetup", level: "required" },
+  ],
   "spotlight status": [{ command: "mdutil", level: "required" }],
   "spotlight reset": [
     { command: "mdutil", level: "required" },

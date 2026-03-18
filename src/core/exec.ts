@@ -5,6 +5,7 @@ export interface ExecOptions {
   allowFailure?: boolean;
   cwd?: string;
   env?: NodeJS.ProcessEnv;
+  stdio?: "pipe" | "inherit";
 }
 
 export interface ExecResult {
@@ -27,20 +28,24 @@ export async function runCommand(
   }
 
   return new Promise((resolve, reject) => {
+    const useInheritedStdio = options.stdio === "inherit";
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: options.env,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio:
+        useInheritedStdio ?
+          ["inherit", "inherit", "inherit"]
+        : ["ignore", "pipe", "pipe"],
     });
 
     let stdout = "";
     let stderr = "";
 
-    child.stdout.on("data", (chunk) => {
+    child.stdout?.on("data", (chunk) => {
       stdout += chunk.toString();
     });
 
-    child.stderr.on("data", (chunk) => {
+    child.stderr?.on("data", (chunk) => {
       stderr += chunk.toString();
     });
 

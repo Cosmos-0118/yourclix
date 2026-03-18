@@ -26,6 +26,21 @@ export class CommandProgress {
     }
   }
 
+  async interactiveStep<T>(label: string, task: () => Promise<T>): Promise<T> {
+    this.current += 1;
+    const prefix = `[${this.current}/${this.totalSteps}]`;
+    console.log(chalk.cyan(`${prefix} ${label}`));
+
+    try {
+      const result = await task();
+      console.log(chalk.green(`${prefix} ${label}`));
+      return result;
+    } catch (error) {
+      console.log(chalk.red(`${prefix} ${label}`));
+      throw error;
+    }
+  }
+
   tick(label: string): void {
     this.current += 1;
     const prefix = `[${this.current}/${this.totalSteps}]`;
