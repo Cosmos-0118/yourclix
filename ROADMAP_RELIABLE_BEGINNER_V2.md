@@ -191,7 +191,7 @@ Use this section to track completed segments.
   - Notes: Added indexing-state verification after reset with actionable manual recovery steps.
 
 - [x] Segment A4: Dev reset verification and manual fallback
-  - Commit: to be filled from git history
+  - Commit: cb7a281
   - Notes: Added post-reset verification for node/python and manual recovery checklist on partial failure.
 
 ## 8) Immediate Next Segment
