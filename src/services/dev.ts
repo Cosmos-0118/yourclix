@@ -1,7 +1,8 @@
 import os from "node:os";
 import path from "node:path";
+import fs from "node:fs/promises";
+import type { Dirent } from "node:fs";
 import chalk from "chalk";
-import fg from "fast-glob";
 import { ActionableError } from "../core/actionable-error.js";
 import { runCommand } from "../core/exec.js";
 import { buildManualRecoveryDetails } from "../core/reconfigure.js";
@@ -16,6 +17,134 @@ interface CleanupTargetInfo {
   path: string;
   bytes: number;
   category: "node_modules" | "xcode_derived_data" | "other";
+}
+
+const DEV_CLEAN_PROJECT_ROOTS = [
+  "Developer",
+  "Projects",
+  "Code",
+  "Work",
+  "Desktop",
+  "Downloads",
+];
+
+const DEV_CLEAN_SKIP_DIRS = new Set([
+  ".git",
+  ".Trash",
+  "Library",
+  "Applications",
+  "Movies",
+  "Music",
+  "Pictures",
+  "Public",
+  "Volumes",
+  "node_modules",
+]);
+
+const DEV_CLEAN_MAX_TARGETS = 2500;
+const DEV_CLEAN_MAX_DEPTH = 8;
+
+function shouldSkipDevCleanDir(name: string): boolean {
+  if (DEV_CLEAN_SKIP_DIRS.has(name)) {
+    return true;
+  }
+
+  return name.startsWith(".") && name !== ".config";
+}
+
+async function listDirectories(dir: string): Promise<string[]> {
+  try {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => path.join(dir, entry.name));
+  } catch {
+    return [];
+  }
+}
+
+async function collectNodeModulesTargets(home: string): Promise<{
+  paths: string[];
+  truncated: boolean;
+}> {
+  const queue: Array<{ dir: string; depth: number }> = [];
+  for (const root of DEV_CLEAN_PROJECT_ROOTS) {
+    queue.push({ dir: path.join(home, root), depth: 0 });
+  }
+  queue.push({ dir: process.cwd(), depth: 0 });
+
+  const seenDirs = new Set<string>();
+  const targets: string[] = [];
+
+  while (queue.length > 0 && targets.length < DEV_CLEAN_MAX_TARGETS) {
+    const current = queue.shift();
+    if (!current) {
+      continue;
+    }
+
+    const resolved = path.resolve(current.dir);
+    if (seenDirs.has(resolved)) {
+      continue;
+    }
+    seenDirs.add(resolved);
+
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(resolved, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+
+      const fullPath = path.join(resolved, entry.name);
+
+      if (entry.name === "node_modules") {
+        targets.push(fullPath);
+        if (targets.length >= DEV_CLEAN_MAX_TARGETS) {
+          break;
+        }
+        continue;
+      }
+
+      if (current.depth >= DEV_CLEAN_MAX_DEPTH) {
+        continue;
+      }
+
+      if (shouldSkipDevCleanDir(entry.name)) {
+        continue;
+      }
+
+      queue.push({ dir: fullPath, depth: current.depth + 1 });
+    }
+  }
+
+  return {
+    paths: targets,
+    truncated: targets.length >= DEV_CLEAN_MAX_TARGETS,
+  };
+}
+
+async function collectXcodeDerivedDataTargets(home: string): Promise<string[]> {
+  return listDirectories(path.join(home, "Library/Developer/Xcode/DerivedData"));
+}
+
+async function scanDevCleanupTargets(home: string): Promise<{
+  paths: string[];
+  truncated: boolean;
+}> {
+  const [nodeModulesResult, xcodeTargets] = await Promise.all([
+    collectNodeModulesTargets(home),
+    collectXcodeDerivedDataTargets(home),
+  ]);
+
+  return {
+    paths: dedupeNestedTargets([...nodeModulesResult.paths, ...xcodeTargets]),
+    truncated: nodeModulesResult.truncated,
+  };
 }
 
 function isNestedPath(childPath: string, parentPath: string): boolean {
@@ -105,24 +234,12 @@ function buildDevManualRecovery(tool: string, plan: DevResetPlan): string[] {
 export async function devClean(dryRun = false, yes = false): Promise<void> {
   const progress = new CommandProgress("Developer Cleanup", 3);
   const home = os.homedir();
-  const targets = [
-    path.join(home, "**/node_modules"),
-    path.join(home, "Library/Developer/Xcode/DerivedData/*"),
-  ];
-
-  const found = await progress.step("Scanning cleanup targets", async () => {
-    const raw = await fg(targets, {
-      dot: true,
-      unique: true,
-      onlyDirectories: true,
-      suppressErrors: true,
-    });
-
-    return dedupeNestedTargets(raw);
-  });
+  const found = await progress.step("Scanning cleanup targets", async () =>
+    scanDevCleanupTargets(home),
+  );
 
   const targetInfos: CleanupTargetInfo[] = [];
-  for (const target of found) {
+  for (const target of found.paths) {
     let category: CleanupTargetInfo["category"] = "other";
     if (target.endsWith(`${path.sep}node_modules`)) {
       category = "node_modules";
@@ -142,6 +259,14 @@ export async function devClean(dryRun = false, yes = false): Promise<void> {
     }
 
     targetInfos.push({ path: target, bytes, category });
+  }
+
+  if (found.truncated) {
+    console.log(
+      chalk.yellow(
+        `Scan limit reached (${DEV_CLEAN_MAX_TARGETS} node_modules folders). Restricting scope to keep memory usage stable.`,
+      ),
+    );
   }
 
   const nodeModules = targetInfos.filter(
