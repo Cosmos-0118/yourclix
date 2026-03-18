@@ -1,7 +1,7 @@
 import chalk from "chalk";
 import { runCommand } from "../core/exec.js";
 
-export type BrewStepStatus = "success" | "failed" | "skipped";
+export type BrewStepStatus = "success" | "warn" | "failed" | "skipped";
 
 export interface BrewStepResult {
   name: string;
@@ -34,6 +34,7 @@ export function printBrewSummary(title: string, steps: BrewStepResult[]): void {
   for (const step of steps) {
     const marker =
       step.status === "success" ? chalk.green("[ok]")
+      : step.status === "warn" ? chalk.yellow("[warn]")
       : step.status === "failed" ? chalk.red("[fail]")
       : chalk.dim("[skip]");
 
