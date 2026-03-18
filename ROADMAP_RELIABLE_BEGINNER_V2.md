@@ -215,15 +215,15 @@ Use this section to track completed segments.
   - Notes: Added severity legend, standardized severity markers, and explicit next-step command hints in doctor report output.
 
 - [x] Segment C2: Clean scale-limit removal
-  - Commit: to be filled from git history
+  - Commit: 5df051d
   - Notes: Removed hard 2000-path truncation in scan flow and added large-result reporting.
 
 - [x] Segment C3: Doctor/fix expansion
-  - Commit: to be filled from git history
+  - Commit: 5df051d
   - Notes: Added network reachability and git identity checks; extended non-fix rationale mapping.
 
 - [x] Segment C4: Dev reset ecosystem expansion
-  - Commit: to be filled from git history
+  - Commit: 5df051d
   - Notes: Added ruby/rust/go reset targets with post-reset verification and help examples.
 
 ## 8) Immediate Next Segment
