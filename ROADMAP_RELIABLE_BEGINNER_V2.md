@@ -231,15 +231,15 @@ Use this section to track completed segments.
   - Notes: Added deterministic managed setup blocks for zsh, bash, and fish in setup flow.
 
 - [x] Segment C5: Completion/plugin/privacy/startup core workflows
-  - Commit: to be filled from git history
+  - Commit: 6d0685c
   - Notes: Added startup enable, completion uninstall, plugin list/search, and privacy browser-aware cleanup behavior.
 
 - [x] Segment D1: Targeted smoke checks
-  - Commit: to be filled from git history
+  - Commit: 6d0685c
   - Notes: Added lightweight smoke script for non-destructive command-level checks.
 
 - [x] Segment D3: Manual recovery documentation
-  - Commit: to be filled from git history
+  - Commit: 6d0685c
   - Notes: Added a dedicated manual recovery guide for reset/reconfigure failures.
 
 ## 8) Immediate Next Segment
