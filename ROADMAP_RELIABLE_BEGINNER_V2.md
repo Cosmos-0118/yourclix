@@ -195,7 +195,7 @@ Use this section to track completed segments.
   - Notes: Added post-reset verification for node/python and manual recovery checklist on partial failure.
 
 - [x] Segment A5: Startup disable verification and manual fallback
-  - Commit: to be filled from git history
+  - Commit: bd0fdba
   - Notes: Added before/after login item verification and manual recovery checklist when disable verification fails.
 
 ## 8) Immediate Next Segment
