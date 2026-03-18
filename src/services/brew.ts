@@ -1,46 +1,75 @@
 import chalk from "chalk";
-import { runCommand } from "../core/exec.js";
 import { CommandProgress } from "../core/progress.js";
-
-interface OutdatedPackages {
-  formulae: string[];
-  casks: string[];
-}
+import {
+  getOutdatedPackages,
+  hasCriticalBrewFailure,
+  printBrewSummary,
+  printCleanupCandidates,
+  printCleanupResult,
+  runBrewStep,
+  type BrewStepResult,
+} from "../managers/brew-manager.js";
 
 export async function brewDoctor(dryRun = false): Promise<void> {
   const progress = new CommandProgress("Brew Doctor", 1);
-  const output = await progress.step("Running brew doctor", async () =>
-    runCommand("brew", ["doctor"], {
-      dryRun,
-      allowFailure: true,
-    }),
+  const steps: BrewStepResult[] = [];
+
+  const doctorStep = await progress.step("Running brew doctor", () =>
+    runBrewStep("Brew doctor", "brew", ["doctor"], false, dryRun),
   );
-  console.log(output.stdout || output.stderr);
+  steps.push(doctorStep);
+
+  printBrewSummary("your brew doctor", steps);
 }
 
 export async function brewClean(dryRun = false): Promise<void> {
   const progress = new CommandProgress("Brew Cleanup", 2);
-  const preview = await progress.step(
-    "Collecting cleanup candidates",
-    async () =>
-      runCommand("brew", ["cleanup", "--prune=all", "-n"], {
-        dryRun,
-        allowFailure: true,
-      }),
+  const steps: BrewStepResult[] = [];
+
+  const previewStep = await progress.step("Collecting cleanup candidates", () =>
+    runBrewStep(
+      "Cleanup preview",
+      "brew",
+      ["cleanup", "--prune=all", "-n"],
+      false,
+      false,
+    ),
   );
+  steps.push(previewStep);
 
-  printCleanupCandidates(preview.stdout || preview.stderr);
+  printCleanupCandidates(previewStep.details[0] ?? "");
 
-  const cleanupResult = await progress.step(
-    "Removing stale brew artifacts",
-    async () =>
-      runCommand("brew", ["cleanup", "--prune=all"], {
-        dryRun,
-        allowFailure: true,
-      }),
-  );
+  if (dryRun) {
+    progress.tick("Skipping cleanup apply step due to dry-run");
+    steps.push({
+      name: "Cleanup apply",
+      command: "brew cleanup --prune=all",
+      critical: true,
+      status: "skipped",
+      details: ["Skipped because dry-run is enabled."],
+    });
+  } else {
+    const cleanupStep = await progress.step(
+      "Removing stale brew artifacts",
+      () =>
+        runBrewStep(
+          "Cleanup apply",
+          "brew",
+          ["cleanup", "--prune=all"],
+          true,
+          false,
+        ),
+    );
+    steps.push(cleanupStep);
+    printCleanupResult(cleanupStep.details[0] ?? "", false);
+  }
 
-  printCleanupResult(cleanupResult.stdout || cleanupResult.stderr, dryRun);
+  printBrewSummary("your brew clean", steps);
+
+  if (hasCriticalBrewFailure(steps)) {
+    throw new Error("One or more critical brew clean steps failed.");
+  }
+
   console.log(chalk.green("Brew cleanup complete."));
 }
 
@@ -52,33 +81,108 @@ export async function brewUpgrade(dryRun = false): Promise<void> {
     1 + Math.max(totalTargets, 1),
   );
 
-  await progress.step("Updating brew formula metadata", async () =>
-    runCommand("brew", ["update"], { dryRun, allowFailure: true }),
+  const steps: BrewStepResult[] = [];
+
+  const updateStep = await progress.step("Updating brew formula metadata", () =>
+    runBrewStep("Brew update", "brew", ["update"], true, false),
   );
+  steps.push(updateStep);
+
+  if (updateStep.status === "failed") {
+    progress.tick("Skipping upgrade targets due to brew update failure");
+    for (const pkg of outdated.formulae) {
+      steps.push({
+        name: `Upgrade formula ${pkg}`,
+        command: `brew upgrade ${pkg}`,
+        critical: true,
+        status: "skipped",
+        details: ["Skipped because brew update failed."],
+      });
+    }
+    for (const cask of outdated.casks) {
+      steps.push({
+        name: `Upgrade cask ${cask}`,
+        command: `brew upgrade --cask ${cask}`,
+        critical: true,
+        status: "skipped",
+        details: ["Skipped because brew update failed."],
+      });
+    }
+
+    printBrewSummary("your brew upgrade", steps);
+    throw new Error("One or more critical brew upgrade steps failed.");
+  }
 
   if (totalTargets === 0) {
     progress.tick("No outdated formulae or casks found");
   }
 
+  if (dryRun && totalTargets > 0) {
+    progress.tick("Dry-run: upgrade commands will not be executed");
+  }
+
   for (const pkg of outdated.formulae) {
-    await progress.step(`Upgrading formula ${pkg}`, async () =>
-      runCommand("brew", ["upgrade", pkg], { dryRun, allowFailure: true }),
+    if (dryRun) {
+      progress.tick(`Would upgrade formula ${pkg}`);
+      steps.push({
+        name: `Upgrade formula ${pkg}`,
+        command: `brew upgrade ${pkg}`,
+        critical: true,
+        status: "skipped",
+        details: ["Skipped because dry-run is enabled."],
+      });
+      continue;
+    }
+
+    const step = await progress.step(`Upgrading formula ${pkg}`, () =>
+      runBrewStep(
+        `Upgrade formula ${pkg}`,
+        "brew",
+        ["upgrade", pkg],
+        true,
+        false,
+      ),
     );
+    steps.push(step);
   }
 
   for (const cask of outdated.casks) {
-    await progress.step(`Upgrading cask ${cask}`, async () =>
-      runCommand("brew", ["upgrade", "--cask", cask], {
-        dryRun,
-        allowFailure: true,
-      }),
+    if (dryRun) {
+      progress.tick(`Would upgrade cask ${cask}`);
+      steps.push({
+        name: `Upgrade cask ${cask}`,
+        command: `brew upgrade --cask ${cask}`,
+        critical: true,
+        status: "skipped",
+        details: ["Skipped because dry-run is enabled."],
+      });
+      continue;
+    }
+
+    const step = await progress.step(`Upgrading cask ${cask}`, () =>
+      runBrewStep(
+        `Upgrade cask ${cask}`,
+        "brew",
+        ["upgrade", "--cask", cask],
+        true,
+        false,
+      ),
     );
+    steps.push(step);
   }
 
   if (totalTargets > 0) {
-    console.log(chalk.bold("Upgraded targets"));
+    console.log(
+      chalk.bold(dryRun ? "Planned upgrade targets" : "Upgraded targets"),
+    );
     outdated.formulae.forEach((pkg) => console.log(`- formula: ${pkg}`));
     outdated.casks.forEach((cask) => console.log(`- cask: ${cask}`));
+  }
+
+  printBrewSummary("your brew upgrade", steps);
+
+  if (hasCriticalBrewFailure(steps)) {
+    throw new Error("One or more critical brew upgrade steps failed.");
   }
 
   console.log(chalk.green("Brew upgrade complete."));
@@ -89,84 +193,4 @@ export async function brewOptimize(dryRun = false): Promise<void> {
   await brewUpgrade(dryRun);
   await brewClean(dryRun);
   console.log(chalk.green("Brew optimize completed."));
-}
-
-async function getOutdatedPackages(): Promise<OutdatedPackages> {
-  const outdatedFormulae = await runCommand("brew", ["outdated", "--formula"], {
-    allowFailure: true,
-  });
-  const outdatedCasks = await runCommand("brew", ["outdated", "--cask"], {
-    allowFailure: true,
-  });
-
-  return {
-    formulae: parseOutdatedOutput(outdatedFormulae.stdout),
-    casks: parseOutdatedOutput(outdatedCasks.stdout),
-  };
-}
-
-function parseOutdatedOutput(output: string): string[] {
-  return output
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => line.split(" ")[0]);
-}
-
-function printCleanupCandidates(output: string): void {
-  const lines = output
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .filter(
-      (line) =>
-        line.startsWith("Would remove") ||
-        line.startsWith("Would prune") ||
-        line.startsWith("Would delete") ||
-        line.startsWith("Would uninstall") ||
-        line.startsWith("Removing") ||
-        line.startsWith("Pruned") ||
-        line.startsWith("Deleted"),
-    );
-
-  if (lines.length === 0) {
-    console.log(chalk.dim("No cleanup candidates detected."));
-    return;
-  }
-
-  console.log(chalk.bold("Cleanup candidates"));
-  lines.slice(0, 30).forEach((line) => console.log(`- ${line}`));
-  if (lines.length > 30) {
-    console.log(chalk.dim(`... and ${lines.length - 30} more lines`));
-  }
-}
-
-function printCleanupResult(output: string, dryRun: boolean): void {
-  const lines = output
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .filter(
-      (line) =>
-        line.startsWith("Removing") ||
-        line.startsWith("Pruned") ||
-        line.startsWith("Deleted") ||
-        line.startsWith("Would remove") ||
-        line.startsWith("Would prune"),
-    );
-
-  if (lines.length === 0) {
-    console.log(
-      chalk.dim(
-        dryRun ? "No files would be removed." : "No files were removed.",
-      ),
-    );
-    return;
-  }
-
-  console.log(chalk.bold(dryRun ? "Would delete" : "Deleted items"));
-  lines.slice(0, 30).forEach((line) => console.log(`- ${line}`));
-  if (lines.length > 30) {
-    console.log(chalk.dim(`... and ${lines.length - 30} more lines`));
-  }
 }

@@ -14,6 +14,8 @@ export interface Issue {
   title: string;
   description: string;
   command?: string;
+  severity?: "info" | "warn" | "critical";
+  recommendedCommand?: string;
   safeToFix: boolean;
 }
 
