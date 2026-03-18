@@ -1,4 +1,5 @@
 import chalk from "chalk";
+import { ActionableError } from "../core/actionable-error.js";
 import { runCommand } from "../core/exec.js";
 import { CommandProgress } from "../core/progress.js";
 import { buildManualRecoveryDetails } from "../core/reconfigure.js";
@@ -458,7 +459,12 @@ export async function spotlightReset(
   printSpotlightSummary(target, steps);
 
   if (hasCriticalFailure(steps)) {
-    throw new Error("One or more critical Spotlight reset steps failed.");
+    throw new ActionableError({
+      code: "SPOTLIGHT_RESET_CRITICAL_FAILURE",
+      summary: "One or more critical Spotlight reset steps failed.",
+      nextSteps: spotlightManualRecovery(target),
+      details: ["Run 'your spotlight status' after applying manual recovery."],
+    });
   }
 
   console.log(chalk.green(`Spotlight reset triggered for ${target}.`));

@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import chalk from "chalk";
+import { ActionableError } from "../../core/actionable-error.js";
 import { runCommand } from "../../core/exec.js";
 import { buildManualRecoveryDetails } from "../../core/reconfigure.js";
 import { confirm } from "../../core/prompt.js";
@@ -524,7 +525,15 @@ export async function netReset(dryRun = false, yes = false): Promise<void> {
   );
 
   if (hasCriticalFailure(steps)) {
-    throw new Error("One or more critical network reset steps failed.");
+    throw new ActionableError({
+      code: "NET_RESET_CRITICAL_FAILURE",
+      summary: "One or more critical network reset steps failed.",
+      nextSteps: buildNetworkManualRecovery(backupDir),
+      details: [
+        `See detailed reset log: ${logger.path}`,
+        `Backup path: ${backupDir}`,
+      ],
+    });
   }
 
   console.log(chalk.green("Network reset completed."));

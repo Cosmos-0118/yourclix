@@ -2,6 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import chalk from "chalk";
 import fg from "fast-glob";
+import { ActionableError } from "../core/actionable-error.js";
 import { runCommand } from "../core/exec.js";
 import { buildManualRecoveryDetails } from "../core/reconfigure.js";
 import { CommandProgress } from "../core/progress.js";
@@ -29,7 +30,14 @@ function getDevResetPlan(tool: string): DevResetPlan {
         verifyArgs: ["--version"],
       };
     default:
-      throw new Error(`Unsupported tool reset target: ${tool}`);
+      throw new ActionableError({
+        code: "DEV_RESET_UNSUPPORTED_TOOL",
+        summary: `Unsupported tool reset target: ${tool}`,
+        nextSteps: [
+          "Use one of the supported targets: node, python",
+          "Run: your dev reset node",
+        ],
+      });
   }
 }
 
@@ -211,7 +219,12 @@ export async function devReset(tool: string, dryRun = false): Promise<void> {
       console.log(chalk.dim(line));
     }
 
-    throw new Error(`Developer reset verification failed for ${tool}.`);
+    throw new ActionableError({
+      code: "DEV_RESET_VERIFICATION_FAILED",
+      summary: `Developer reset verification failed for ${tool}.`,
+      details: failedDetails,
+      nextSteps: buildDevManualRecovery(tool, plan),
+    });
   }
 
   if (!dryRun) {

@@ -103,7 +103,7 @@ Objective: make all reset/reconfigure operations verify outcomes and provide man
 
 Objective: beginners always know what happened and what to do next.
 
-- [ ] B1. Normalize actionable error format across commands
+- [x] B1. Normalize actionable error format across commands
 - [ ] B2. Add "next command" guidance on success/failure summaries
 - [ ] B3. Add concise help examples for high-traffic commands (`setup`, `clean`, `doctor`, `net`)
 - [ ] B4. Add severity conventions for doctor output and fix suggestions
@@ -197,6 +197,10 @@ Use this section to track completed segments.
 - [x] Segment A5: Startup disable verification and manual fallback
   - Commit: bd0fdba
   - Notes: Added before/after login item verification and manual recovery checklist when disable verification fails.
+
+- [x] Segment B1: Normalized actionable error format
+  - Commit: to be filled from git history
+  - Notes: Added shared actionable error model and formatter, integrated in reset/reconfigure failure paths.
 
 ## 8) Immediate Next Segment
 

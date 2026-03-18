@@ -1,4 +1,5 @@
 import chalk from "chalk";
+import { ActionableError } from "../core/actionable-error.js";
 import { runCommand } from "../core/exec.js";
 import { buildManualRecoveryDetails } from "../core/reconfigure.js";
 import { CommandProgress } from "../core/progress.js";
@@ -111,7 +112,17 @@ export async function disableStartupItem(
       console.log(chalk.dim(line));
     }
 
-    throw new Error(`Failed to disable startup item '${name}'.`);
+    throw new ActionableError({
+      code: "STARTUP_DISABLE_FAILED",
+      summary: `Failed to disable startup item '${name}'.`,
+      details: [
+        disableResult.code !== 0 ?
+          `Disable command failed: ${disableResult.stderr || disableResult.stdout || "unknown error"}`
+        : "Disable command returned success.",
+        stillPresent ? `Verification failed: '${name}' is still present.` : "Verification passed.",
+      ],
+      nextSteps: startupManualRecovery(name),
+    });
   }
 
   if (!matchedBefore) {
