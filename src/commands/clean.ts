@@ -2,6 +2,7 @@ import { Command } from "commander";
 import {
   executeCleaner,
   printCleanerResults,
+  runCleanerSelfCheck,
   scanCleanerTargets,
 } from "../services/cleaner.js";
 import { withGlobalOptions } from "./helpers.js";
@@ -15,9 +16,16 @@ export function registerClean(program: Command): void {
       .option("--safe", "legacy alias for basic mode")
       .option("--deep", "legacy alias for deep mode")
       .option("--system", "system-wide cleanup mode (advanced)")
+      .option("--verify", "run cleaner self-check and exit")
       .option("--mode <mode>", "run level: basic | deep | system", "basic"),
   ).action(async (options) => {
     const mode = resolveRunLevel(options);
+
+    if (options.verify) {
+      await runCleanerSelfCheck(mode);
+      return;
+    }
+
     const results = await scanCleanerTargets(mode);
     printCleanerResults(results);
     await executeCleaner(results, {

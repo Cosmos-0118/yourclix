@@ -29,8 +29,8 @@ your
 ## Core Commands
 
 ```bash
-your setup [--fast] [--apps] [--dry-run]
-your clean [--mode basic|deep|system] [--dry-run] [-y]
+your setup [--fast] [--apps] [--profile minimal|webdev|full] [--app-mode none|minimal|webdev|full] [--config ./setup.config.json] [--debug] [--dry-run]
+your clean [--mode basic|deep|system] [--verify] [--dry-run] [-y]
 your net fix [--dry-run]
 your net reset [--dry-run] [-y]
 your spotlight status
