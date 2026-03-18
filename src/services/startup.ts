@@ -4,6 +4,7 @@ import { runCommand } from "../core/exec.js";
 import { buildManualRecoveryDetails } from "../core/reconfigure.js";
 import { printNextCommands } from "../core/next-steps.js";
 import { CommandProgress } from "../core/progress.js";
+import { hasNamedEntry } from "../core/verification.js";
 
 function parseStartupItems(raw: string): string[] {
   return raw
@@ -84,7 +85,7 @@ export async function disableStartupItem(
     getStartupItems(),
   );
 
-  const matchedBefore = beforeItems.some((item) => item === name);
+  const matchedBefore = hasNamedEntry(beforeItems, name);
 
   const disableResult = await progress.step(
     `Disabling login item '${name}'`,
@@ -108,7 +109,7 @@ export async function disableStartupItem(
     getStartupItems(),
   );
 
-  const stillPresent = afterItems.some((item) => item === name);
+  const stillPresent = hasNamedEntry(afterItems, name);
 
   if (disableResult.code !== 0 || stillPresent) {
     console.log(chalk.bold(`Startup item disable failed for '${name}'.`));
@@ -167,7 +168,7 @@ export async function enableStartupItem(
     getStartupItems(),
   );
 
-  const alreadyPresent = beforeItems.some((item) => item === name);
+  const alreadyPresent = hasNamedEntry(beforeItems, name);
   if (alreadyPresent) {
     console.log(
       chalk.yellow(
@@ -200,7 +201,7 @@ export async function enableStartupItem(
     getStartupItems(),
   );
 
-  const nowPresent = afterItems.some((item) => item === name);
+  const nowPresent = hasNamedEntry(afterItems, name);
   if (enableResult.code !== 0 || !nowPresent) {
     const details: string[] = [];
     if (enableResult.code !== 0) {

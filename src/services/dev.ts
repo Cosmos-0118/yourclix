@@ -7,6 +7,7 @@ import { runCommand } from "../core/exec.js";
 import { buildManualRecoveryDetails } from "../core/reconfigure.js";
 import { printNextCommands } from "../core/next-steps.js";
 import { CommandProgress } from "../core/progress.js";
+import { firstCommandOutput } from "../core/verification.js";
 import { removePath } from "../core/fs-utils.js";
 import { confirm } from "../core/prompt.js";
 
@@ -252,7 +253,7 @@ export async function devReset(tool: string, dryRun = false): Promise<void> {
   if (!dryRun) {
     console.log(
       chalk.green(
-        `Verification output: ${(verifyResult.stdout || verifyResult.stderr || "(no output)").split("\n")[0]}`,
+        `Verification output: ${firstCommandOutput(verifyResult)}`,
       ),
     );
   }

@@ -123,7 +123,7 @@ Objective: make each feature genuinely useful day-to-day.
 Objective: reduce regressions while keeping implementation simple.
 
 - [x] D1. Add targeted smoke tests for destructive and reset commands
-- [ ] D2. Add command-level verification helpers where duplicated
+- [x] D2. Add command-level verification helpers where duplicated
 - [x] D3. Add docs page: "If reset fails, do this manually"
 
 ## 6) Feature-by-Feature Upgrade Backlog
@@ -241,6 +241,10 @@ Use this section to track completed segments.
 - [x] Segment D3: Manual recovery documentation
   - Commit: 6d0685c
   - Notes: Added a dedicated manual recovery guide for reset/reconfigure failures.
+
+- [x] Segment D2: Shared verification helpers
+  - Commit: to be filled from git history
+  - Notes: Added reusable verification helpers and applied them to startup/dev verification paths.
 
 ## 8) Immediate Next Segment
 
