@@ -1,6 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import chalk from "chalk";
+import { ActionableError } from "../core/actionable-error.js";
 import { runCommand } from "../core/exec.js";
 import { CommandProgress } from "../core/progress.js";
 import { confirm } from "../core/prompt.js";
@@ -55,7 +56,7 @@ function expandTargets(targets: string[]): string[] {
 }
 
 export async function privacyClean(dryRun = false, yes = false): Promise<void> {
-  const progress = new CommandProgress("Privacy Cleanup", 3);
+  const progress = new CommandProgress("Privacy Cleanup", 4);
   console.log(chalk.bold("Privacy cleanup targets:"));
 
   const browsers = await progress.step("Detecting installed browsers", async () =>
@@ -96,8 +97,49 @@ export async function privacyClean(dryRun = false, yes = false): Promise<void> {
   await progress.step(
     `Removing ${expanded.length} privacy targets`,
     async () => {
+      const blocked: string[] = [];
+      const failed: string[] = [];
+
       for (const target of expanded) {
-        await removePath(path.resolve(target), dryRun);
+        const absoluteTarget = path.resolve(target);
+
+        try {
+          await removePath(absoluteTarget, dryRun);
+        } catch (error) {
+          const errno = error as NodeJS.ErrnoException;
+          if (errno.code === "EPERM" || errno.code === "EACCES") {
+            blocked.push(absoluteTarget);
+            continue;
+          }
+
+          failed.push(`${absoluteTarget}: ${errno.message}`);
+        }
+      }
+
+      if (blocked.length > 0 || failed.length > 0) {
+        const details: string[] = [];
+
+        if (blocked.length > 0) {
+          details.push(
+            `Permission denied for ${blocked.length} target(s):`,
+            ...blocked.map((target) => `  ${target}`),
+          );
+        }
+
+        if (failed.length > 0) {
+          details.push("Failed to remove:", ...failed.map((entry) => `  ${entry}`));
+        }
+
+        throw new ActionableError({
+          code: "PRIVACY_CLEAN_PARTIAL",
+          summary: "Privacy cleanup completed with blocked targets.",
+          details,
+          nextSteps: [
+            "Run the command again after closing related apps.",
+            "Grant Full Disk Access to your terminal app in System Settings > Privacy & Security > Full Disk Access.",
+            "Re-run: your privacy clean --yes",
+          ],
+        });
       }
     },
   );

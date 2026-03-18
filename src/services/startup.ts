@@ -6,6 +6,12 @@ import { printNextCommands } from "../core/next-steps.js";
 import { CommandProgress } from "../core/progress.js";
 import { hasNamedEntry } from "../core/verification.js";
 
+interface StartupItem {
+  name: string;
+  hidden: boolean;
+  running: boolean;
+}
+
 function parseStartupItems(raw: string): string[] {
   return raw
     .split(",")
@@ -13,11 +19,15 @@ function parseStartupItems(raw: string): string[] {
     .filter(Boolean);
 }
 
+function parseBooleanItems(raw: string): boolean[] {
+  return parseStartupItems(raw).map((item) => item.toLowerCase() === "true");
+}
+
 function escapeAppleScriptString(value: string): string {
   return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
 }
 
-async function getStartupItems(): Promise<string[]> {
+async function getStartupItems(): Promise<StartupItem[]> {
   const output = await runCommand(
     "osascript",
     [
@@ -32,7 +42,41 @@ async function getStartupItems(): Promise<string[]> {
     return [];
   }
 
-  return parseStartupItems(raw);
+  const names = parseStartupItems(raw);
+
+  const hiddenOutput = await runCommand(
+    "osascript",
+    [
+      "-e",
+      'tell application "System Events" to get the hidden of every login item',
+    ],
+    { allowFailure: true },
+  );
+
+  const hiddenValues = parseBooleanItems(
+    (hiddenOutput.stdout || hiddenOutput.stderr || "").trim(),
+  );
+
+  const runningOutput = await runCommand(
+    "osascript",
+    [
+      "-e",
+      'tell application "System Events" to get the name of every application process',
+    ],
+    { allowFailure: true },
+  );
+
+  const runningNames = new Set(
+    parseStartupItems((runningOutput.stdout || runningOutput.stderr || "").trim()).map((name) =>
+      name.toLowerCase(),
+    ),
+  );
+
+  return names.map((name, index) => ({
+    name,
+    hidden: hiddenValues[index] ?? false,
+    running: runningNames.has(name.toLowerCase()),
+  }));
 }
 
 function startupManualRecovery(name: string): string[] {
@@ -67,7 +111,9 @@ export async function listStartupItems(): Promise<void> {
 
   console.log(chalk.bold("Startup items:"));
   for (const item of items) {
-    console.log(`- ${item}`);
+    const launchMode = item.hidden ? "launch hidden" : "launch visible";
+    const runtimeState = item.running ? "running" : "not running";
+    console.log(`- ${item.name} (${launchMode}, ${runtimeState})`);
   }
 
   printNextCommands("Next commands:", [
@@ -85,7 +131,10 @@ export async function disableStartupItem(
     getStartupItems(),
   );
 
-  const matchedBefore = hasNamedEntry(beforeItems, name);
+  const matchedBefore = hasNamedEntry(
+    beforeItems.map((item) => item.name),
+    name,
+  );
 
   const disableResult = await progress.step(
     `Disabling login item '${name}'`,
@@ -109,7 +158,10 @@ export async function disableStartupItem(
     getStartupItems(),
   );
 
-  const stillPresent = hasNamedEntry(afterItems, name);
+  const stillPresent = hasNamedEntry(
+    afterItems.map((item) => item.name),
+    name,
+  );
 
   if (disableResult.code !== 0 || stillPresent) {
     console.log(chalk.bold(`Startup item disable failed for '${name}'.`));
@@ -168,7 +220,10 @@ export async function enableStartupItem(
     getStartupItems(),
   );
 
-  const alreadyPresent = hasNamedEntry(beforeItems, name);
+  const alreadyPresent = hasNamedEntry(
+    beforeItems.map((item) => item.name),
+    name,
+  );
   if (alreadyPresent) {
     console.log(
       chalk.yellow(
@@ -201,7 +256,10 @@ export async function enableStartupItem(
     getStartupItems(),
   );
 
-  const nowPresent = hasNamedEntry(afterItems, name);
+  const nowPresent = hasNamedEntry(
+    afterItems.map((item) => item.name),
+    name,
+  );
   if (enableResult.code !== 0 || !nowPresent) {
     const details: string[] = [];
     if (enableResult.code !== 0) {

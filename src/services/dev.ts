@@ -8,8 +8,39 @@ import { buildManualRecoveryDetails } from "../core/reconfigure.js";
 import { printNextCommands } from "../core/next-steps.js";
 import { CommandProgress } from "../core/progress.js";
 import { firstCommandOutput } from "../core/verification.js";
-import { removePath } from "../core/fs-utils.js";
+import { bytesToHuman } from "../core/format.js";
+import { pathSizeFast, removePath } from "../core/fs-utils.js";
 import { confirm } from "../core/prompt.js";
+
+interface CleanupTargetInfo {
+  path: string;
+  bytes: number;
+  category: "node_modules" | "xcode_derived_data" | "other";
+}
+
+function isNestedPath(childPath: string, parentPath: string): boolean {
+  const child = path.resolve(childPath);
+  const parent = path.resolve(parentPath);
+  if (child === parent) {
+    return false;
+  }
+
+  return child.startsWith(`${parent}${path.sep}`);
+}
+
+function dedupeNestedTargets(paths: string[]): string[] {
+  const sorted = [...new Set(paths)].sort((a, b) => a.length - b.length);
+  const selected: string[] = [];
+
+  for (const candidate of sorted) {
+    const covered = selected.some((existing) => isNestedPath(candidate, existing));
+    if (!covered) {
+      selected.push(candidate);
+    }
+  }
+
+  return selected;
+}
 
 interface DevResetPlan {
   brewPackage: string;
@@ -79,45 +110,86 @@ export async function devClean(dryRun = false, yes = false): Promise<void> {
     path.join(home, "Library/Developer/Xcode/DerivedData/*"),
   ];
 
-  const found = await progress.step("Scanning cleanup targets", async () =>
-    fg(targets, {
+  const found = await progress.step("Scanning cleanup targets", async () => {
+    const raw = await fg(targets, {
       dot: true,
       unique: true,
       onlyDirectories: true,
       suppressErrors: true,
-    }),
-  );
+    });
 
-  const nodeModules = found.filter((entry) =>
-    entry.endsWith(`${path.sep}node_modules`),
-  );
-  const xcodeDerivedData = found.filter((entry) =>
-    entry.includes(
-      `${path.sep}Library${path.sep}Developer${path.sep}Xcode${path.sep}DerivedData${path.sep}`,
-    ),
-  );
-  const otherTargets =
-    found.length - nodeModules.length - xcodeDerivedData.length;
+    return dedupeNestedTargets(raw);
+  });
 
-  console.log(chalk.bold("Developer cleanup targets"));
-  console.log(`- Total: ${found.length}`);
-  console.log(`- node_modules: ${nodeModules.length}`);
-  console.log(`- Xcode DerivedData: ${xcodeDerivedData.length}`);
-  if (otherTargets > 0) {
-    console.log(`- Other: ${otherTargets}`);
+  const targetInfos: CleanupTargetInfo[] = [];
+  for (const target of found) {
+    let category: CleanupTargetInfo["category"] = "other";
+    if (target.endsWith(`${path.sep}node_modules`)) {
+      category = "node_modules";
+    } else if (
+      target.includes(
+        `${path.sep}Library${path.sep}Developer${path.sep}Xcode${path.sep}DerivedData${path.sep}`,
+      )
+    ) {
+      category = "xcode_derived_data";
+    }
+
+    let bytes = 0;
+    try {
+      bytes = await pathSizeFast(target);
+    } catch {
+      bytes = 0;
+    }
+
+    targetInfos.push({ path: target, bytes, category });
   }
 
-  const preview = found.slice(0, 20);
-  if (preview.length > 0) {
-    console.log(chalk.dim("Sample targets (first 20)"));
-    for (const target of preview) {
-      console.log(chalk.dim(`- ${target}`));
+  const nodeModules = targetInfos.filter(
+    (entry) => entry.category === "node_modules",
+  );
+  const xcodeDerivedData = targetInfos.filter(
+    (entry) => entry.category === "xcode_derived_data",
+  );
+  const otherTargets = targetInfos.filter((entry) => entry.category === "other");
+  const totalBytes = targetInfos.reduce((sum, entry) => sum + entry.bytes, 0);
+  const nodeModulesBytes = nodeModules.reduce((sum, entry) => sum + entry.bytes, 0);
+  const xcodeBytes = xcodeDerivedData.reduce((sum, entry) => sum + entry.bytes, 0);
+  const otherBytes = otherTargets.reduce((sum, entry) => sum + entry.bytes, 0);
+
+  console.log(chalk.bold("Developer cleanup targets"));
+  console.log(`- Total: ${targetInfos.length}`);
+  console.log(
+    `- node_modules: ${nodeModules.length} (${bytesToHuman(nodeModulesBytes)})`,
+  );
+  console.log(
+    `- Xcode DerivedData: ${xcodeDerivedData.length} (${bytesToHuman(xcodeBytes)})`,
+  );
+  if (otherTargets.length > 0) {
+    console.log(`- Other: ${otherTargets.length} (${bytesToHuman(otherBytes)})`);
+  }
+  console.log(chalk.cyan(`Estimated reclaimable: ${bytesToHuman(totalBytes)}`));
+
+  const largestTargets = [...targetInfos]
+    .sort((a, b) => b.bytes - a.bytes)
+    .slice(0, 10);
+  if (largestTargets.length > 0) {
+    console.log(chalk.dim("Largest targets"));
+    for (const target of largestTargets) {
+      console.log(chalk.dim(`- ${target.path} (${bytesToHuman(target.bytes)})`));
     }
   }
 
-  if (found.length > preview.length) {
+  const preview = targetInfos.slice(0, 20);
+  if (preview.length > 0) {
+    console.log(chalk.dim("Sample targets (first 20)"));
+    for (const target of preview) {
+      console.log(chalk.dim(`- ${target.path} (${bytesToHuman(target.bytes)})`));
+    }
+  }
+
+  if (targetInfos.length > preview.length) {
     console.log(
-      chalk.dim(`...and ${found.length - preview.length} more target(s).`),
+      chalk.dim(`...and ${targetInfos.length - preview.length} more target(s).`),
     );
   }
 
@@ -128,18 +200,20 @@ export async function devClean(dryRun = false, yes = false): Promise<void> {
   }
 
   let removedCount = 0;
+  let reclaimedBytes = 0;
   const failedTargets: Array<{ path: string; reason: string }> = [];
   await progress.step(
-    `Removing ${found.length} filesystem targets`,
+    `Removing ${targetInfos.length} filesystem targets`,
     async () => {
-      for (const target of found) {
+      for (const target of targetInfos) {
         try {
-          await removePath(target, dryRun);
+          await removePath(target.path, dryRun);
           removedCount += 1;
+          reclaimedBytes += target.bytes;
         } catch (error) {
           const message =
             error instanceof Error ? error.message : String(error);
-          failedTargets.push({ path: target, reason: message || "unknown" });
+          failedTargets.push({ path: target.path, reason: message || "unknown" });
         }
       }
     },
@@ -164,6 +238,9 @@ export async function devClean(dryRun = false, yes = false): Promise<void> {
   const actionWord = dryRun ? "Would remove" : "Removed";
   console.log(chalk.bold("Developer cleanup summary"));
   console.log(chalk.green(`- ${actionWord}: ${removedCount} targets`));
+  console.log(
+    chalk.cyan(`- ${dryRun ? "Potential reclaim" : "Reclaimed"}: ${bytesToHuman(reclaimedBytes)}`),
+  );
   console.log(chalk.yellow(`- Failed: ${failedTargets.length} targets`));
 
   if (failedTargets.length > 0) {
