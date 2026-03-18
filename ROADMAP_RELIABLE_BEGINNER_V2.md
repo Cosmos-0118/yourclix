@@ -207,11 +207,11 @@ Use this section to track completed segments.
   - Notes: Added reusable next-command helper and integrated guidance into dev/startup/network/spotlight success paths.
 
 - [x] Segment B3: Concise command help examples
-  - Commit: to be filled from git history
+  - Commit: 9423312
   - Notes: Added practical examples to setup/clean/doctor/net help output for beginner discoverability.
 
 - [x] Segment B4: Doctor severity conventions and fix guidance
-  - Commit: to be filled from git history
+  - Commit: 9423312
   - Notes: Added severity legend, standardized severity markers, and explicit next-step command hints in doctor report output.
 
 ## 8) Immediate Next Segment
