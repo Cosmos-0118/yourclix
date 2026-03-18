@@ -179,15 +179,15 @@ Each item below is intentionally short for maintainability.
 Use this section to track completed segments.
 
 - [x] Segment A1: Shared reset verification pattern
-  - Commit: to be filled from git history
+  - Commit: fb79fc0
   - Notes: Added reusable manual recovery detail builder for reset/reconfigure flows.
 
 - [x] Segment A2: Network reset verification and manual fallback
-  - Commit: to be filled from git history
+  - Commit: fb79fc0
   - Notes: Added post-delete plist verification and explicit manual recovery checklist on verification failures.
 
 - [x] Segment A3: Spotlight reset verification and manual fallback
-  - Commit: to be filled from git history
+  - Commit: fb79fc0
   - Notes: Added indexing-state verification after reset with actionable manual recovery steps.
 
 ## 8) Immediate Next Segment
