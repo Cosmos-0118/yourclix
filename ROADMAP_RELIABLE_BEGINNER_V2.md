@@ -112,7 +112,7 @@ Objective: beginners always know what happened and what to do next.
 
 Objective: make each feature genuinely useful day-to-day.
 
-- [ ] C1. setup: multi-shell idempotent install/uninstall blocks with verification
+- [x] C1. setup: multi-shell idempotent install/uninstall blocks with verification
 - [x] C2. clean: remove scale limits, add chunked progress and larger category coverage
 - [x] C3. doctor/fix: expand checks and auto-fix mappings
 - [x] C4. dev: broaden ecosystem coverage (node/python/ruby/rust/go basics)
@@ -225,6 +225,14 @@ Use this section to track completed segments.
 - [x] Segment C4: Dev reset ecosystem expansion
   - Commit: 5df051d
   - Notes: Added ruby/rust/go reset targets with post-reset verification and help examples.
+
+- [x] Segment C1: Setup multi-shell idempotence
+  - Commit: to be filled from git history
+  - Notes: Added deterministic managed setup blocks for zsh, bash, and fish in setup flow.
+
+- [ ] Segment C5 (partial): Startup lifecycle completeness
+  - Commit: to be filled from git history
+  - Notes: Added startup enable command with post-action verification; completion/plugin/privacy portions remain.
 
 ## 8) Immediate Next Segment
 

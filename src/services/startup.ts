@@ -43,6 +43,16 @@ function startupManualRecovery(name: string): string[] {
   ]);
 }
 
+function startupEnableManualRecovery(name: string, appPath: string): string[] {
+  const escapedName = escapeAppleScriptString(name);
+  const escapedPath = escapeAppleScriptString(appPath);
+  return buildManualRecoveryDetails("Manual recovery checklist:", [
+    `Open System Settings > General > Login Items and add '${appPath}' manually.`,
+    `Or run: osascript -e 'tell application "System Events" to make login item at end with properties {name:"${escapedName}", path:"${escapedPath}", hidden:false}'`,
+    "Run: your startup list",
+  ]);
+}
+
 export async function listStartupItems(): Promise<void> {
   const progress = new CommandProgress("Startup Manager", 1);
   const items = await progress.step("Reading login items", async () =>
@@ -141,5 +151,75 @@ export async function disableStartupItem(
   }
 
   console.log(chalk.green(`Startup item disabled: ${name}`));
+  printNextCommands("Next commands:", ["your startup list"]);
+}
+
+export async function enableStartupItem(
+  name: string,
+  appPath: string,
+  dryRun = false,
+): Promise<void> {
+  const escapedName = escapeAppleScriptString(name);
+  const escapedPath = escapeAppleScriptString(appPath);
+  const progress = new CommandProgress("Startup Manager", 3);
+
+  const beforeItems = await progress.step("Reading current login items", async () =>
+    getStartupItems(),
+  );
+
+  const alreadyPresent = beforeItems.some((item) => item === name);
+  if (alreadyPresent) {
+    console.log(
+      chalk.yellow(
+        `Startup item '${name}' is already enabled; no change was required.`,
+      ),
+    );
+    printNextCommands("Next commands:", ["your startup list"]);
+    return;
+  }
+
+  const enableResult = await progress.step(
+    `Enabling login item '${name}'`,
+    async () =>
+      runCommand(
+        "osascript",
+        [
+          "-e",
+          `tell application "System Events" to make login item at end with properties {name:"${escapedName}", path:"${escapedPath}", hidden:false}`,
+        ],
+        { dryRun, allowFailure: true },
+      ),
+  );
+
+  if (dryRun) {
+    console.log(chalk.green(`Startup item enable preview complete: ${name}`));
+    return;
+  }
+
+  const afterItems = await progress.step("Verifying login item state", async () =>
+    getStartupItems(),
+  );
+
+  const nowPresent = afterItems.some((item) => item === name);
+  if (enableResult.code !== 0 || !nowPresent) {
+    const details: string[] = [];
+    if (enableResult.code !== 0) {
+      details.push(
+        `Enable command failed: ${enableResult.stderr || enableResult.stdout || "unknown error"}`,
+      );
+    }
+    if (!nowPresent) {
+      details.push(`Verification failed: '${name}' is still missing.`);
+    }
+
+    throw new ActionableError({
+      code: "STARTUP_ENABLE_FAILED",
+      summary: `Failed to enable startup item '${name}'.`,
+      details,
+      nextSteps: startupEnableManualRecovery(name, appPath),
+    });
+  }
+
+  console.log(chalk.green(`Startup item enabled: ${name}`));
   printNextCommands("Next commands:", ["your startup list"]);
 }

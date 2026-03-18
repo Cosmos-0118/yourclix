@@ -57,6 +57,18 @@ const APP_BUNDLES: Record<AppsMode, string[]> = {
 
 const ZSH_SETUP_BLOCK_START = "# >>> setup.ts managed block >>>";
 const ZSH_SETUP_BLOCK_END = "# <<< setup.ts managed block <<<";
+const BASH_SETUP_BLOCK_START = "# >>> setup.ts managed block >>>";
+const BASH_SETUP_BLOCK_END = "# <<< setup.ts managed block <<<";
+const FISH_SETUP_BLOCK_START = "# >>> setup.ts managed block >>>";
+const FISH_SETUP_BLOCK_END = "# <<< setup.ts managed block <<<";
+
+interface ShellBlockConfig {
+  shell: "zsh" | "bash" | "fish";
+  filePath: string;
+  blockStart: string;
+  blockEnd: string;
+  lines: string[];
+}
 
 export interface SetupOptions {
   fast?: boolean;
@@ -216,20 +228,20 @@ export async function runSetup(options: SetupOptions): Promise<void> {
           logger,
         );
 
-        const zshSummary = await ensureManagedZshBlock(effective, logger);
+        const shellSummary = await ensureManagedShellBlocks(effective, logger);
         const status: StepStatus =
-          installSummary.status === "failed" || zshSummary.status === "failed" ?
+          installSummary.status === "failed" || shellSummary.status === "failed" ?
             "failed"
           : (
             installSummary.status === "partial" ||
-            zshSummary.status === "partial"
+            shellSummary.status === "partial"
           ) ?
             "partial"
           : "success";
 
         return {
           status,
-          details: [...installSummary.details, ...zshSummary.details],
+          details: [...installSummary.details, ...shellSummary.details],
         };
       }),
     );
@@ -516,35 +528,25 @@ async function isInstalled(target: InstallTarget): Promise<boolean> {
   return result.code === 0 && result.stdout.trim().length > 0;
 }
 
-async function ensureManagedZshBlock(
+async function upsertManagedShellBlock(
+  config: ShellBlockConfig,
   effective: EffectiveSetupConfig,
   logger: SetupLogger,
 ): Promise<{ status: StepStatus; details: string[] }> {
-  const home = os.homedir();
-  const zshrc = path.join(home, ".zshrc");
+  const shellConfigPath = config.filePath;
   let existing = "";
   try {
-    existing = await fs.readFile(zshrc, "utf8");
+    existing = await fs.readFile(shellConfigPath, "utf8");
   } catch {
     existing = "";
   }
 
-  const block = [
-    ZSH_SETUP_BLOCK_START,
-    "if command -v brew >/dev/null 2>&1; then",
-    '  HOMEBREW_PREFIX="$(brew --prefix)"',
-    '  [ -f "$HOMEBREW_PREFIX/share/zsh-autosuggestions/zsh-autosuggestions.zsh" ] && source "$HOMEBREW_PREFIX/share/zsh-autosuggestions/zsh-autosuggestions.zsh"',
-    '  [ -f "$HOMEBREW_PREFIX/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ] && source "$HOMEBREW_PREFIX/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"',
-    "fi",
-    "if command -v starship >/dev/null 2>&1; then",
-    '  eval "$(starship init zsh)"',
-    "fi",
-    ZSH_SETUP_BLOCK_END,
-    "",
-  ].join("\n");
+  const block = [config.blockStart, ...config.lines, config.blockEnd, ""].join(
+    "\n",
+  );
 
   const pattern = new RegExp(
-    `${escapeRegExp(ZSH_SETUP_BLOCK_START)}[\\s\\S]*?${escapeRegExp(ZSH_SETUP_BLOCK_END)}\\n?`,
+    `${escapeRegExp(config.blockStart)}[\\s\\S]*?${escapeRegExp(config.blockEnd)}\\n?`,
     "m",
   );
 
@@ -556,13 +558,86 @@ async function ensureManagedZshBlock(
   if (effective.dryRun) {
     return {
       status: "success",
-      details: ["Would update managed zsh shell block."],
+      details: [`Would update managed ${config.shell} shell block.`],
     };
   }
 
-  await fs.writeFile(zshrc, next, "utf8");
-  await logger.log("info", `Updated managed shell block in ${zshrc}`);
-  return { status: "success", details: ["Managed zsh shell block updated."] };
+  await fs.mkdir(path.dirname(shellConfigPath), { recursive: true });
+  await fs.writeFile(shellConfigPath, next, "utf8");
+  await logger.log("info", `Updated managed shell block in ${shellConfigPath}`);
+  return {
+    status: "success",
+    details: [`Managed ${config.shell} shell block updated.`],
+  };
+}
+
+async function ensureManagedShellBlocks(
+  effective: EffectiveSetupConfig,
+  logger: SetupLogger,
+): Promise<{ status: StepStatus; details: string[] }> {
+  const home = os.homedir();
+  const shellBlocks: ShellBlockConfig[] = [
+    {
+      shell: "zsh",
+      filePath: path.join(home, ".zshrc"),
+      blockStart: ZSH_SETUP_BLOCK_START,
+      blockEnd: ZSH_SETUP_BLOCK_END,
+      lines: [
+        "if command -v brew >/dev/null 2>&1; then",
+        '  HOMEBREW_PREFIX="$(brew --prefix)"',
+        '  [ -f "$HOMEBREW_PREFIX/share/zsh-autosuggestions/zsh-autosuggestions.zsh" ] && source "$HOMEBREW_PREFIX/share/zsh-autosuggestions/zsh-autosuggestions.zsh"',
+        '  [ -f "$HOMEBREW_PREFIX/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ] && source "$HOMEBREW_PREFIX/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"',
+        "fi",
+        "if command -v starship >/dev/null 2>&1; then",
+        '  eval "$(starship init zsh)"',
+        "fi",
+      ],
+    },
+    {
+      shell: "bash",
+      filePath: path.join(home, ".bash_profile"),
+      blockStart: BASH_SETUP_BLOCK_START,
+      blockEnd: BASH_SETUP_BLOCK_END,
+      lines: [
+        "if command -v brew >/dev/null 2>&1; then",
+        '  eval "$(brew shellenv)"',
+        "fi",
+        "if command -v starship >/dev/null 2>&1; then",
+        '  eval "$(starship init bash)"',
+        "fi",
+      ],
+    },
+    {
+      shell: "fish",
+      filePath: path.join(home, ".config/fish/config.fish"),
+      blockStart: FISH_SETUP_BLOCK_START,
+      blockEnd: FISH_SETUP_BLOCK_END,
+      lines: [
+        "if type -q brew",
+        "  brew shellenv | source",
+        "end",
+        "if type -q starship",
+        "  starship init fish | source",
+        "end",
+      ],
+    },
+  ];
+
+  const details: string[] = [];
+  let hasPartial = false;
+
+  for (const shellBlock of shellBlocks) {
+    const result = await upsertManagedShellBlock(shellBlock, effective, logger);
+    details.push(...result.details);
+    if (result.status !== "success") {
+      hasPartial = true;
+    }
+  }
+
+  return {
+    status: hasPartial ? "partial" : "success",
+    details,
+  };
 }
 
 function escapeRegExp(input: string): string {
