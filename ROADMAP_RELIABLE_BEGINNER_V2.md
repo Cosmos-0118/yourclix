@@ -243,7 +243,7 @@ Use this section to track completed segments.
   - Notes: Added a dedicated manual recovery guide for reset/reconfigure failures.
 
 - [x] Segment D2: Shared verification helpers
-  - Commit: to be filled from git history
+  - Commit: 00a4c17
   - Notes: Added reusable verification helpers and applied them to startup/dev verification paths.
 
 ## 8) Immediate Next Segment
