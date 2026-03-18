@@ -203,7 +203,7 @@ Use this section to track completed segments.
   - Notes: Added shared actionable error model and formatter, integrated in reset/reconfigure failure paths.
 
 - [x] Segment B2: Next-command guidance in summaries
-  - Commit: to be filled from git history
+  - Commit: a390a18
   - Notes: Added reusable next-command helper and integrated guidance into dev/startup/network/spotlight success paths.
 
 ## 8) Immediate Next Segment
