@@ -17,7 +17,16 @@ export function registerDev(program: Command): void {
     dev
       .command("reset")
       .description("Reset a specific dev tool environment")
-      .argument("<tool>", "tool to reset"),
+      .argument("<tool>", "tool to reset: node | python | ruby | rust | go")
+      .addHelpText(
+        "after",
+        `
+Examples:
+  your dev reset node
+  your dev reset python --dry-run
+  your dev reset rust
+`,
+      ),
   ).action(async (tool: string, options) => {
     await devReset(tool, Boolean(options.dryRun));
   });

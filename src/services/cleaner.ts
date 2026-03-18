@@ -53,7 +53,7 @@ export async function scanCleanerTargets(
           suppressErrors: true,
         });
 
-        const distinct = [...new Set(matches)].slice(0, 2000);
+        const distinct = [...new Set(matches)];
         const bytes = await sumPathSizesFast(distinct, 12);
 
         return {
@@ -68,6 +68,11 @@ export async function scanCleanerTargets(
       progress.info(
         `${result.category}: ${bytesToHuman(result.bytes)} across ${result.paths.length} paths`,
       );
+      if (result.paths.length > 2000) {
+        progress.info(
+          `${result.category}: large result set detected (${result.paths.length} paths).`,
+        );
+      }
       results.push(result);
     } else {
       progress.info(`${result.category}: no cleanup candidates`);

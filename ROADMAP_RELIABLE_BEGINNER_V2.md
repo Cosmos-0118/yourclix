@@ -113,9 +113,9 @@ Objective: beginners always know what happened and what to do next.
 Objective: make each feature genuinely useful day-to-day.
 
 - [ ] C1. setup: multi-shell idempotent install/uninstall blocks with verification
-- [ ] C2. clean: remove scale limits, add chunked progress and larger category coverage
-- [ ] C3. doctor/fix: expand checks and auto-fix mappings
-- [ ] C4. dev: broaden ecosystem coverage (node/python/ruby/rust/go basics)
+- [x] C2. clean: remove scale limits, add chunked progress and larger category coverage
+- [x] C3. doctor/fix: expand checks and auto-fix mappings
+- [x] C4. dev: broaden ecosystem coverage (node/python/ruby/rust/go basics)
 - [ ] C5. completion/plugin/privacy/startup: fill core missing workflows
 
 ## Phase D: Quality Guardrails
@@ -213,6 +213,18 @@ Use this section to track completed segments.
 - [x] Segment B4: Doctor severity conventions and fix guidance
   - Commit: 9423312
   - Notes: Added severity legend, standardized severity markers, and explicit next-step command hints in doctor report output.
+
+- [x] Segment C2: Clean scale-limit removal
+  - Commit: to be filled from git history
+  - Notes: Removed hard 2000-path truncation in scan flow and added large-result reporting.
+
+- [x] Segment C3: Doctor/fix expansion
+  - Commit: to be filled from git history
+  - Notes: Added network reachability and git identity checks; extended non-fix rationale mapping.
+
+- [x] Segment C4: Dev reset ecosystem expansion
+  - Commit: to be filled from git history
+  - Notes: Added ruby/rust/go reset targets with post-reset verification and help examples.
 
 ## 8) Immediate Next Segment
 

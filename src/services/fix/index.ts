@@ -18,6 +18,10 @@ function getNonFixableReason(issue: Issue): string {
       return "Cache locations can include active workspace/runtime data and need explicit user choice.";
     case "low-disk-space":
       return "Low space can be caused by mixed data types; auto-delete could remove important files.";
+    case "network-reachability":
+      return "Connectivity issues depend on local network/router state and need user context before applying resets.";
+    case "git-identity-missing":
+      return "Git identity values are personal and should be configured explicitly by the user.";
     default:
       return "No safe automatic remediation is mapped for this issue yet.";
   }

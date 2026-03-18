@@ -106,7 +106,7 @@ export async function runDoctorChecks(): Promise<DoctorReport> {
   const issues: Issue[] = [];
   const home = os.homedir();
   const config = await loadDoctorConfig();
-  const progress = new CommandProgress("System Doctor", 5);
+  const progress = new CommandProgress("System Doctor", 7);
 
   const targets = [
     path.join(home, "Downloads"),
@@ -233,6 +233,68 @@ export async function runDoctorChecks(): Promise<DoctorReport> {
       command: "your space",
       recommendedCommand: "your space",
       severity: "critical",
+    });
+  }
+
+  const networkReachable = await progress.step(
+    "Checking network reachability",
+    async () => {
+      const checks = ["https://github.com", "https://formulae.brew.sh/api"];
+      for (const url of checks) {
+        const probe = await runCommand(
+          "curl",
+          ["-Is", "--max-time", "6", url],
+          { allowFailure: true },
+        );
+
+        if (probe.code !== 0) {
+          return false;
+        }
+      }
+
+      return true;
+    },
+  );
+
+  if (!networkReachable) {
+    issues.push({
+      id: "network-reachability",
+      title: "Network connectivity appears unstable",
+      description: "Could not confirm access to common developer endpoints",
+      safeToFix: false,
+      command: "your net fix",
+      recommendedCommand: "your net fix",
+      severity: "warn",
+    });
+  }
+
+  const gitIdentity = await progress.step(
+    "Checking Git identity configuration",
+    async () => {
+      const userName = await runCommand("git", ["config", "--global", "user.name"], {
+        allowFailure: true,
+      });
+      const userEmail = await runCommand("git", ["config", "--global", "user.email"], {
+        allowFailure: true,
+      });
+
+      return {
+        hasName: userName.code === 0 && Boolean(userName.stdout.trim()),
+        hasEmail: userEmail.code === 0 && Boolean(userEmail.stdout.trim()),
+      };
+    },
+  );
+
+  if (!gitIdentity.hasName || !gitIdentity.hasEmail) {
+    issues.push({
+      id: "git-identity-missing",
+      title: "Git identity is not fully configured",
+      description: "Missing global user.name or user.email can break commits",
+      safeToFix: false,
+      command: "git config --global user.name \"Your Name\" && git config --global user.email \"you@example.com\"",
+      recommendedCommand:
+        "git config --global user.name \"Your Name\" && git config --global user.email \"you@example.com\"",
+      severity: "warn",
     });
   }
 

@@ -30,12 +30,30 @@ function getDevResetPlan(tool: string): DevResetPlan {
         verifyCommand: "python3",
         verifyArgs: ["--version"],
       };
+    case "ruby":
+      return {
+        brewPackage: "ruby",
+        verifyCommand: "ruby",
+        verifyArgs: ["--version"],
+      };
+    case "rust":
+      return {
+        brewPackage: "rust",
+        verifyCommand: "rustc",
+        verifyArgs: ["--version"],
+      };
+    case "go":
+      return {
+        brewPackage: "go",
+        verifyCommand: "go",
+        verifyArgs: ["version"],
+      };
     default:
       throw new ActionableError({
         code: "DEV_RESET_UNSUPPORTED_TOOL",
         summary: `Unsupported tool reset target: ${tool}`,
         nextSteps: [
-          "Use one of the supported targets: node, python",
+          "Use one of the supported targets: node, python, ruby, rust, go",
           "Run: your dev reset node",
         ],
       });
@@ -163,6 +181,9 @@ export async function devReset(tool: string, dryRun = false): Promise<void> {
   const title =
     tool === "node" ? "Node"
     : tool === "python" ? "Python"
+    : tool === "ruby" ? "Ruby"
+    : tool === "rust" ? "Rust"
+    : tool === "go" ? "Go"
     : tool;
   const progress = new CommandProgress(`Developer Reset (${tool})`, 3);
 
