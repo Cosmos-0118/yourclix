@@ -30,6 +30,8 @@ interface DeletionCandidate {
 
 type SkipRecord = HeuristicSkipRecord;
 
+const SAFETY_SKIP_REASONS = ["protected-path", "newer-than-"];
+
 export async function scanCleanerTargets(
   mode: CleanerOptions["mode"],
 ): Promise<ScanResult[]> {
@@ -120,7 +122,7 @@ export async function executeCleaner(
   );
 
   const scanProgress = new CommandProgress("Cleanup Preflight", 1);
-  const { candidates, skipped } = await scanProgress.step(
+  const { candidates, skipped, safetySkipped } = await scanProgress.step(
     "Validating target paths",
     async () => {
       const validCandidates: ValidatedDeletionCandidate[] = [];
@@ -148,20 +150,59 @@ export async function executeCleaner(
       return {
         candidates: filtered.candidates,
         skipped: [...skippedTargets, ...filtered.skipped],
+        safetySkipped: filtered.skipped,
       };
     },
   );
 
-  if (!candidates.length) {
+  let selectedCandidates = candidates;
+
+  if (!selectedCandidates.length) {
     console.log(
       chalk.yellow("No eligible cleanup candidates after safety checks."),
     );
     printSkippedDetails(skipped);
-    return;
+
+    const overrideCandidates = safetySkipped
+      .filter((entry) => isSafetySkipReason(entry.reason))
+      .map((entry) => {
+        if (!entry.category) {
+          return null;
+        }
+
+        return {
+          path: entry.path,
+          category: entry.category,
+          bytes: entry.bytes ?? 0,
+          mtimeMs: entry.mtimeMs ?? Date.now(),
+        } satisfies ValidatedDeletionCandidate;
+      })
+      .filter((entry): entry is ValidatedDeletionCandidate => entry !== null);
+
+    if (overrideCandidates.length === 0) {
+      return;
+    }
+
+    const overrideApproval = await confirm(
+      `Safety checks blocked ${overrideCandidates.length} path(s). Delete them anyway?`,
+      false,
+    );
+
+    if (!overrideApproval) {
+      console.log(chalk.yellow("Cancelled by user."));
+      return;
+    }
+
+    selectedCandidates = overrideCandidates;
+    console.log(
+      chalk.yellow(
+        `Proceeding with ${selectedCandidates.length} safety-override deletion target(s).`,
+      ),
+    );
   }
 
   const approved = await confirm(
-    `Delete ${candidates.length} paths in ${options.mode.toUpperCase()} mode? ` +
+    `Delete ${selectedCandidates.length} paths in ${options.mode.toUpperCase()} mode? ` +
       `(risky paths must be older than ${policy.olderThanDays} day(s))`,
     Boolean(options.yes),
   );
@@ -176,14 +217,14 @@ export async function executeCleaner(
   let reclaimedBytes = 0;
   let backupId: string | null = null;
 
-  await progress.step(`Removing ${candidates.length} valid paths`, async () => {
+  await progress.step(`Removing ${selectedCandidates.length} valid paths`, async () => {
     if (options.dryRun) {
       // In dry-run, just simulate deletion
-      deletedCount = candidates.length;
-      reclaimedBytes = candidates.reduce((sum, c) => sum + c.bytes, 0);
+      deletedCount = selectedCandidates.length;
+      reclaimedBytes = selectedCandidates.reduce((sum, c) => sum + c.bytes, 0);
     } else {
       // Create backup of all files to be deleted
-      const candidatePaths = candidates.map((c) => c.path);
+      const candidatePaths = selectedCandidates.map((c) => c.path);
       const backup = await undoManager.createBackup(
         candidatePaths,
         "clean",
@@ -326,7 +367,7 @@ function printSkippedDetails(skipped: SkipRecord[]): void {
 
   console.log(chalk.bold("Skipped reasons"));
   for (const [reason, count] of reasonCounts) {
-    console.log(`- ${reason}: ${count}`);
+    console.log(`- ${formatSkipReason(reason)}: ${count}`);
   }
 
   const sample = skipped.slice(0, 5);
@@ -336,4 +377,29 @@ function printSkippedDetails(skipped: SkipRecord[]): void {
       console.log(chalk.dim(`- ${entry.path} (${entry.reason})`));
     }
   }
+}
+
+function formatSkipReason(reason: string): string {
+  if (reason === "protected-path") {
+    return "protected-path (matched protected path safety rule)";
+  }
+
+  if (reason.startsWith("newer-than-")) {
+    const age = reason.replace("newer-than-", "");
+    return `retention-gate (target is newer than ${age})`;
+  }
+
+  if (reason === "permission-denied") {
+    return "permission-denied (insufficient filesystem permissions)";
+  }
+
+  if (reason === "not-found") {
+    return "not-found (path no longer exists)";
+  }
+
+  return reason;
+}
+
+function isSafetySkipReason(reason: string): boolean {
+  return SAFETY_SKIP_REASONS.some((prefix) => reason.startsWith(prefix));
 }

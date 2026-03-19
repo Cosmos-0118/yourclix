@@ -11,6 +11,9 @@ import {
 export interface HeuristicSkipRecord {
   path: string;
   reason: string;
+  category?: string;
+  bytes?: number;
+  mtimeMs?: number;
 }
 
 export interface ValidatedDeletionCandidate {
@@ -78,7 +81,13 @@ export function applyCleanerHeuristics(
 
   for (const candidate of candidates) {
     if (isProtectedCleanupPath(candidate.path, policy.protectedPaths)) {
-      skipped.push({ path: candidate.path, reason: "protected-path" });
+      skipped.push({
+        path: candidate.path,
+        reason: "protected-path",
+        category: candidate.category,
+        bytes: candidate.bytes,
+        mtimeMs: candidate.mtimeMs,
+      });
       continue;
     }
 
@@ -87,6 +96,9 @@ export function applyCleanerHeuristics(
       skipped.push({
         path: candidate.path,
         reason: `newer-than-${policy.olderThanDays}d`,
+        category: candidate.category,
+        bytes: candidate.bytes,
+        mtimeMs: candidate.mtimeMs,
       });
       continue;
     }
