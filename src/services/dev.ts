@@ -2,6 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
 import type { Dirent } from "node:fs";
+import { fileURLToPath } from "node:url";
 import chalk from "chalk";
 import { ActionableError } from "../core/actionable-error.js";
 import { runCommand } from "../core/exec.js";
@@ -43,6 +44,16 @@ const DEV_CLEAN_SKIP_DIRS = new Set([
 
 const DEV_CLEAN_MAX_TARGETS = 2500;
 const DEV_CLEAN_MAX_DEPTH = 8;
+const DEV_INSTALL_SOURCE_ROOT = path.join(os.homedir(), ".your", "source");
+const DEV_CURRENT_PACKAGE_ROOT = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../..",
+);
+
+interface ProtectedTargetsFilter {
+  filtered: string[];
+  skippedProtected: number;
+}
 
 function shouldSkipDevCleanDir(name: string): boolean {
   if (DEV_CLEAN_SKIP_DIRS.has(name)) {
@@ -50,6 +61,40 @@ function shouldSkipDevCleanDir(name: string): boolean {
   }
 
   return name.startsWith(".") && name !== ".config";
+}
+
+function isSameOrNestedPath(targetPath: string, basePath: string): boolean {
+  const target = path.resolve(targetPath);
+  const base = path.resolve(basePath);
+  return target === base || target.startsWith(`${base}${path.sep}`);
+}
+
+function getProtectedDevCleanupRoots(): string[] {
+  return dedupeNestedTargets([
+    process.cwd(),
+    DEV_CURRENT_PACKAGE_ROOT,
+    DEV_INSTALL_SOURCE_ROOT,
+  ]);
+}
+
+function filterProtectedDevCleanupTargets(paths: string[]): ProtectedTargetsFilter {
+  const protectedNodeModulesRoots = getProtectedDevCleanupRoots().map((root) =>
+    path.join(root, "node_modules"),
+  );
+
+  let skippedProtected = 0;
+  const filtered = paths.filter((targetPath) => {
+    const isProtected = protectedNodeModulesRoots.some((protectedRoot) =>
+      isSameOrNestedPath(targetPath, protectedRoot),
+    );
+    if (isProtected) {
+      skippedProtected += 1;
+      return false;
+    }
+    return true;
+  });
+
+  return { filtered, skippedProtected };
 }
 
 async function listDirectories(dir: string): Promise<string[]> {
@@ -238,8 +283,10 @@ export async function devClean(dryRun = false, yes = false): Promise<void> {
     scanDevCleanupTargets(home),
   );
 
+  const protectedFiltered = filterProtectedDevCleanupTargets(found.paths);
+
   const targetInfos: CleanupTargetInfo[] = [];
-  for (const target of found.paths) {
+  for (const target of protectedFiltered.filtered) {
     let category: CleanupTargetInfo["category"] = "other";
     if (target.endsWith(`${path.sep}node_modules`)) {
       category = "node_modules";
@@ -265,6 +312,14 @@ export async function devClean(dryRun = false, yes = false): Promise<void> {
     console.log(
       chalk.yellow(
         `Scan limit reached (${DEV_CLEAN_MAX_TARGETS} node_modules folders). Restricting scope to keep memory usage stable.`,
+      ),
+    );
+  }
+
+  if (protectedFiltered.skippedProtected > 0) {
+    console.log(
+      chalk.yellow(
+        `Skipped ${protectedFiltered.skippedProtected} protected node_modules target(s) required by current CLI/workspace.`,
       ),
     );
   }

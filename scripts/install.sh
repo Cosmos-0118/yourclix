@@ -39,26 +39,47 @@ ensure_node() {
 }
 
 ensure_path() {
-  local zprofile="$HOME/.zprofile"
   local marker="export PATH=\"$HOME/.npm-global/bin:$PATH\""
+  local shell_rc_files=("$HOME/.zprofile" "$HOME/.zshrc")
 
   mkdir -p "$HOME/.npm-global"
   npm config set prefix "$HOME/.npm-global" >/dev/null
 
-  if [[ ! -f "$zprofile" ]]; then
-    touch "$zprofile"
-  fi
+  for rc_file in "${shell_rc_files[@]}"; do
+    if [[ ! -f "$rc_file" ]]; then
+      touch "$rc_file"
+    fi
 
-  if ! grep -Fq "$marker" "$zprofile"; then
-    print_step "Updating PATH in $zprofile"
-    {
-      echo ""
-      echo "# your CLI global npm path"
-      echo "$marker"
-    } >>"$zprofile"
-  fi
+    if ! grep -Fq "$marker" "$rc_file"; then
+      print_step "Updating PATH in $rc_file"
+      {
+        echo ""
+        echo "# your CLI global npm path"
+        echo "$marker"
+      } >>"$rc_file"
+    fi
+  done
 
   export PATH="$HOME/.npm-global/bin:$PATH"
+}
+
+cleanup_legacy_prefix_installs() {
+  local scoped_dir="@yourclix"
+  local package_dir="your"
+  local prefixes=("/opt/homebrew" "/usr/local")
+
+  for prefix in "${prefixes[@]}"; do
+    local legacy_bin="${prefix}/bin/your"
+    local legacy_pkg="${prefix}/lib/node_modules/${scoped_dir}/${package_dir}"
+    if [[ -e "$legacy_bin" || -e "$legacy_pkg" ]]; then
+      print_step "Removing legacy install from ${prefix}"
+      rm -f "$legacy_bin" >/dev/null 2>&1 || true
+      rm -rf "$legacy_pkg" >/dev/null 2>&1 || true
+
+      # Remove now-empty scope directory if present.
+      rmdir "${prefix}/lib/node_modules/${scoped_dir}" >/dev/null 2>&1 || true
+    fi
+  done
 }
 
 fix_global_bin_permissions() {
@@ -147,7 +168,14 @@ install_cli() {
     cd "$SOURCE_DIR"
     npm install
     npm run build
-    npm install -g .
+
+    local package_tgz
+    package_tgz="$(npm pack --silent | tail -n 1)"
+    npm install -g "$package_tgz"
+    rm -f "$package_tgz"
+
+    # Keep source tree lightweight; next install/update will restore deps when needed.
+    rm -rf node_modules
   )
 
   fix_global_bin_permissions
@@ -186,6 +214,7 @@ main() {
   ensure_homebrew
   ensure_node
   ensure_path
+  cleanup_legacy_prefix_installs
   install_cli
   install_completion
   final_message
