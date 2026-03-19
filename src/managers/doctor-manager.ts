@@ -106,7 +106,7 @@ export async function runDoctorChecks(): Promise<DoctorReport> {
   const issues: Issue[] = [];
   const home = os.homedir();
   const config = await loadDoctorConfig();
-  const progress = new CommandProgress("System Doctor", 5);
+  const progress = new CommandProgress("System Doctor", 7);
 
   const targets = [
     path.join(home, "Downloads"),
@@ -236,6 +236,68 @@ export async function runDoctorChecks(): Promise<DoctorReport> {
     });
   }
 
+  const networkReachable = await progress.step(
+    "Checking network reachability",
+    async () => {
+      const checks = ["https://github.com", "https://formulae.brew.sh/api"];
+      for (const url of checks) {
+        const probe = await runCommand(
+          "curl",
+          ["-Is", "--max-time", "6", url],
+          { allowFailure: true },
+        );
+
+        if (probe.code !== 0) {
+          return false;
+        }
+      }
+
+      return true;
+    },
+  );
+
+  if (!networkReachable) {
+    issues.push({
+      id: "network-reachability",
+      title: "Network connectivity appears unstable",
+      description: "Could not confirm access to common developer endpoints",
+      safeToFix: false,
+      command: "your net fix",
+      recommendedCommand: "your net fix",
+      severity: "warn",
+    });
+  }
+
+  const gitIdentity = await progress.step(
+    "Checking Git identity configuration",
+    async () => {
+      const userName = await runCommand("git", ["config", "--global", "user.name"], {
+        allowFailure: true,
+      });
+      const userEmail = await runCommand("git", ["config", "--global", "user.email"], {
+        allowFailure: true,
+      });
+
+      return {
+        hasName: userName.code === 0 && Boolean(userName.stdout.trim()),
+        hasEmail: userEmail.code === 0 && Boolean(userEmail.stdout.trim()),
+      };
+    },
+  );
+
+  if (!gitIdentity.hasName || !gitIdentity.hasEmail) {
+    issues.push({
+      id: "git-identity-missing",
+      title: "Git identity is not fully configured",
+      description: "Missing global user.name or user.email can break commits",
+      safeToFix: false,
+      command: "git config --global user.name \"Your Name\" && git config --global user.email \"you@example.com\"",
+      recommendedCommand:
+        "git config --global user.name \"Your Name\" && git config --global user.email \"you@example.com\"",
+      severity: "warn",
+    });
+  }
+
   return { issues, largeDirectories, developerCaches, diskFreePercent };
 }
 
@@ -244,7 +306,29 @@ export function printDoctorSummary(report: DoctorReport): void {
     console.log(chalk.green("No major issues found."));
   } else {
     const order = ["critical", "warn", "info"] as const;
+    const severityMeta: Record<
+      (typeof order)[number],
+      { header: string; marker: string; color: (text: string) => string }
+    > = {
+      critical: {
+        header: "CRITICAL",
+        marker: "[CRIT]",
+        color: chalk.red,
+      },
+      warn: {
+        header: "WARNING",
+        marker: "[WARN]",
+        color: chalk.yellow,
+      },
+      info: {
+        header: "INFO",
+        marker: "[INFO]",
+        color: chalk.cyan,
+      },
+    };
+
     console.log(chalk.bold("System health report"));
+    console.log(chalk.dim("Severity legend: [CRIT] immediate action, [WARN] should fix soon, [INFO] optional optimization."));
 
     for (const severity of order) {
       const group = report.issues.filter((issue) => (issue.severity ?? "warn") === severity);
@@ -252,13 +336,15 @@ export function printDoctorSummary(report: DoctorReport): void {
         continue;
       }
 
-      console.log(chalk.bold(`\n${severity.toUpperCase()}`));
+      const meta = severityMeta[severity];
+      console.log(meta.color(chalk.bold(`\n${meta.header}`)));
       for (const issue of group) {
-        console.log(chalk.yellow(`- ${issue.title}: ${issue.description}`));
+        console.log(meta.color(`- ${meta.marker} ${issue.title}: ${issue.description}`));
         const recommended = issue.recommendedCommand ?? issue.command;
         if (recommended) {
-          console.log(`  You can address this with: ${recommended}`);
+          console.log(`  Next step: ${recommended}`);
         }
+        console.log(chalk.dim(`  Safe auto-fix: ${issue.safeToFix ? "yes" : "no"}`));
       }
     }
   }

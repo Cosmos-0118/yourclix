@@ -15,6 +15,15 @@ export function registerSetup(program: Command): void {
     .option("--config <path>", "path to setup JSON config file")
     .option("--debug", "enable verbose setup debug logging")
     .option("--dry-run", "preview actions without changing anything")
+    .addHelpText(
+      "after",
+      `
+Examples:
+  your setup --profile minimal
+  your setup --profile webdev --app-mode minimal
+  your setup --config ~/.your-config/setup.json --dry-run
+`,
+    )
     .action(async (options) => {
       await runSetup(options);
     });

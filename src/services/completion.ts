@@ -101,7 +101,7 @@ _your() {
                 ;;
               reset)
                 if (( CURRENT == 4 )); then
-                  _values 'tool' 'node[Reset Node.js]' 'python[Reset Python]'
+                  _values 'tool' 'node[Reset Node.js]' 'python[Reset Python]' 'ruby[Reset Ruby]' 'rust[Reset Rust]' 'go[Reset Go]'
                 else
                   _arguments '--dry-run[Preview only]'
                 fi
@@ -122,9 +122,12 @@ _your() {
           ;;
         startup)
           if (( CURRENT == 3 )); then
-            _values 'startup command' 'list[List startup items]' 'disable[Disable startup item]'
+            _values 'startup command' 'list[List startup items]' 'enable[Enable startup item]' 'disable[Disable startup item]'
           else
             case "\${words[3]}" in
+              enable)
+                _arguments '--path=[Full app path]' '--dry-run[Preview only]' '1:item name:_message "startup item name"'
+                ;;
               disable)
                 _arguments '--dry-run[Preview only]' '1:item name:_message "startup item name"'
                 ;;
@@ -144,11 +147,14 @@ _your() {
           ;;
         completion)
           if (( CURRENT == 3 )); then
-            _values 'completion command' 'zsh[Print zsh completion script]' 'install[Install zsh completion]'
+            _values 'completion command' 'zsh[Print zsh completion script]' 'install[Install zsh completion]' 'uninstall[Remove zsh completion]'
           else
             case "\${words[3]}" in
               install)
                 _arguments '--shell=[Shell type]:shell:(zsh)' '--force[Re-install completion block]'
+                ;;
+              uninstall)
+                _arguments '--shell=[Shell type]:shell:(zsh)'
                 ;;
             esac
           fi
@@ -221,6 +227,29 @@ export async function installZshCompletion(force = false): Promise<void> {
   console.log(chalk.green("Zsh completion installed."));
   console.log("Run: source ~/.zshrc");
   console.log("Then try: your <TAB>");
+}
+
+export async function uninstallZshCompletion(): Promise<void> {
+  let zshrcContent = "";
+  try {
+    zshrcContent = await fs.readFile(ZSHRC, "utf8");
+  } catch {
+    zshrcContent = "";
+  }
+
+  const pattern = new RegExp(
+    `${escapeRegExp(ZSH_BLOCK_START)}[\\s\\S]*?${escapeRegExp(ZSH_BLOCK_END)}\\n?`,
+    "m",
+  );
+
+  if (pattern.test(zshrcContent)) {
+    const replaced = zshrcContent.replace(pattern, "").trimEnd() + "\n";
+    await fs.writeFile(ZSHRC, replaced, "utf8");
+  }
+
+  await fs.rm(COMPLETION_FILE, { force: true });
+  console.log(chalk.green("Zsh completion uninstalled."));
+  console.log("Run: source ~/.zshrc");
 }
 
 function escapeRegExp(input: string): string {

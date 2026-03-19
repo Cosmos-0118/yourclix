@@ -10,13 +10,40 @@ import {
   type BrewStepResult,
 } from "../managers/brew-manager.js";
 
+function isWarningOnlyDoctorOutput(step: BrewStepResult): boolean {
+  if (step.status !== "failed") {
+    return false;
+  }
+
+  const details = (step.details[0] ?? "").toLowerCase();
+  const hasWarning = details.includes("warning:");
+  const hasError = details.includes("error:");
+  return hasWarning && !hasError;
+}
+
+function normalizeDoctorStep(step: BrewStepResult): BrewStepResult {
+  if (!isWarningOnlyDoctorOutput(step)) {
+    return step;
+  }
+
+  return {
+    ...step,
+    status: "warn",
+    details: [
+      "Brew doctor reported warnings (non-fatal).",
+      ...(step.details.length > 0 ? [step.details[0]] : []),
+    ],
+  };
+}
+
 export async function brewDoctor(dryRun = false): Promise<void> {
   const progress = new CommandProgress("Brew Doctor", 1);
   const steps: BrewStepResult[] = [];
 
-  const doctorStep = await progress.step("Running brew doctor", () =>
+  const doctorStepRaw = await progress.step("Running brew doctor", () =>
     runBrewStep("Brew doctor", "brew", ["doctor"], false, dryRun),
   );
+  const doctorStep = normalizeDoctorStep(doctorStepRaw);
   steps.push(doctorStep);
 
   printBrewSummary("your brew doctor", steps);
@@ -189,8 +216,13 @@ export async function brewUpgrade(dryRun = false): Promise<void> {
 }
 
 export async function brewOptimize(dryRun = false): Promise<void> {
+  console.log(chalk.bold("Pre-cleanup doctor pass"));
   await brewDoctor(dryRun);
   await brewUpgrade(dryRun);
   await brewClean(dryRun);
+
+  console.log(chalk.bold("Post-cleanup doctor pass"));
+  await brewDoctor(dryRun);
+
   console.log(chalk.green("Brew optimize completed."));
 }

@@ -1,59 +1,320 @@
 import os from "node:os";
 import path from "node:path";
+import fs from "node:fs/promises";
+import type { Dirent } from "node:fs";
 import chalk from "chalk";
-import fg from "fast-glob";
+import { ActionableError } from "../core/actionable-error.js";
 import { runCommand } from "../core/exec.js";
+import { buildManualRecoveryDetails } from "../core/reconfigure.js";
+import { printNextCommands } from "../core/next-steps.js";
 import { CommandProgress } from "../core/progress.js";
-import { removePath } from "../core/fs-utils.js";
+import { firstCommandOutput } from "../core/verification.js";
+import { bytesToHuman } from "../core/format.js";
+import { pathSizeFast, removePath } from "../core/fs-utils.js";
 import { confirm } from "../core/prompt.js";
+
+interface CleanupTargetInfo {
+  path: string;
+  bytes: number;
+  category: "node_modules" | "xcode_derived_data" | "other";
+}
+
+const DEV_CLEAN_PROJECT_ROOTS = [
+  "Developer",
+  "Projects",
+  "Code",
+  "Work",
+  "Desktop",
+  "Downloads",
+];
+
+const DEV_CLEAN_SKIP_DIRS = new Set([
+  ".git",
+  ".Trash",
+  "Library",
+  "Applications",
+  "Movies",
+  "Music",
+  "Pictures",
+  "Public",
+  "Volumes",
+  "node_modules",
+]);
+
+const DEV_CLEAN_MAX_TARGETS = 2500;
+const DEV_CLEAN_MAX_DEPTH = 8;
+
+function shouldSkipDevCleanDir(name: string): boolean {
+  if (DEV_CLEAN_SKIP_DIRS.has(name)) {
+    return true;
+  }
+
+  return name.startsWith(".") && name !== ".config";
+}
+
+async function listDirectories(dir: string): Promise<string[]> {
+  try {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => path.join(dir, entry.name));
+  } catch {
+    return [];
+  }
+}
+
+async function collectNodeModulesTargets(home: string): Promise<{
+  paths: string[];
+  truncated: boolean;
+}> {
+  const queue: Array<{ dir: string; depth: number }> = [];
+  for (const root of DEV_CLEAN_PROJECT_ROOTS) {
+    queue.push({ dir: path.join(home, root), depth: 0 });
+  }
+  queue.push({ dir: process.cwd(), depth: 0 });
+
+  const seenDirs = new Set<string>();
+  const targets: string[] = [];
+
+  while (queue.length > 0 && targets.length < DEV_CLEAN_MAX_TARGETS) {
+    const current = queue.shift();
+    if (!current) {
+      continue;
+    }
+
+    const resolved = path.resolve(current.dir);
+    if (seenDirs.has(resolved)) {
+      continue;
+    }
+    seenDirs.add(resolved);
+
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(resolved, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+
+      const fullPath = path.join(resolved, entry.name);
+
+      if (entry.name === "node_modules") {
+        targets.push(fullPath);
+        if (targets.length >= DEV_CLEAN_MAX_TARGETS) {
+          break;
+        }
+        continue;
+      }
+
+      if (current.depth >= DEV_CLEAN_MAX_DEPTH) {
+        continue;
+      }
+
+      if (shouldSkipDevCleanDir(entry.name)) {
+        continue;
+      }
+
+      queue.push({ dir: fullPath, depth: current.depth + 1 });
+    }
+  }
+
+  return {
+    paths: targets,
+    truncated: targets.length >= DEV_CLEAN_MAX_TARGETS,
+  };
+}
+
+async function collectXcodeDerivedDataTargets(home: string): Promise<string[]> {
+  return listDirectories(path.join(home, "Library/Developer/Xcode/DerivedData"));
+}
+
+async function scanDevCleanupTargets(home: string): Promise<{
+  paths: string[];
+  truncated: boolean;
+}> {
+  const [nodeModulesResult, xcodeTargets] = await Promise.all([
+    collectNodeModulesTargets(home),
+    collectXcodeDerivedDataTargets(home),
+  ]);
+
+  return {
+    paths: dedupeNestedTargets([...nodeModulesResult.paths, ...xcodeTargets]),
+    truncated: nodeModulesResult.truncated,
+  };
+}
+
+function isNestedPath(childPath: string, parentPath: string): boolean {
+  const child = path.resolve(childPath);
+  const parent = path.resolve(parentPath);
+  if (child === parent) {
+    return false;
+  }
+
+  return child.startsWith(`${parent}${path.sep}`);
+}
+
+function dedupeNestedTargets(paths: string[]): string[] {
+  const sorted = [...new Set(paths)].sort((a, b) => a.length - b.length);
+  const selected: string[] = [];
+
+  for (const candidate of sorted) {
+    const covered = selected.some((existing) => isNestedPath(candidate, existing));
+    if (!covered) {
+      selected.push(candidate);
+    }
+  }
+
+  return selected;
+}
+
+interface DevResetPlan {
+  brewPackage: string;
+  verifyCommand: string;
+  verifyArgs: string[];
+}
+
+function getDevResetPlan(tool: string): DevResetPlan {
+  switch (tool) {
+    case "node":
+      return {
+        brewPackage: "node",
+        verifyCommand: "node",
+        verifyArgs: ["--version"],
+      };
+    case "python":
+      return {
+        brewPackage: "python",
+        verifyCommand: "python3",
+        verifyArgs: ["--version"],
+      };
+    case "ruby":
+      return {
+        brewPackage: "ruby",
+        verifyCommand: "ruby",
+        verifyArgs: ["--version"],
+      };
+    case "rust":
+      return {
+        brewPackage: "rust",
+        verifyCommand: "rustc",
+        verifyArgs: ["--version"],
+      };
+    case "go":
+      return {
+        brewPackage: "go",
+        verifyCommand: "go",
+        verifyArgs: ["version"],
+      };
+    default:
+      throw new ActionableError({
+        code: "DEV_RESET_UNSUPPORTED_TOOL",
+        summary: `Unsupported tool reset target: ${tool}`,
+        nextSteps: [
+          "Use one of the supported targets: node, python, ruby, rust, go",
+          "Run: your dev reset node",
+        ],
+      });
+  }
+}
+
+function buildDevManualRecovery(tool: string, plan: DevResetPlan): string[] {
+  const verifyCommand = `${plan.verifyCommand} ${plan.verifyArgs.join(" ")}`;
+  return buildManualRecoveryDetails("Manual recovery checklist:", [
+    `Run: brew uninstall ${plan.brewPackage}`,
+    `Run: brew install ${plan.brewPackage}`,
+    `Run: ${verifyCommand}`,
+    `Run: your dev reset ${tool}`,
+  ]);
+}
 
 export async function devClean(dryRun = false, yes = false): Promise<void> {
   const progress = new CommandProgress("Developer Cleanup", 3);
   const home = os.homedir();
-  const targets = [
-    path.join(home, "**/node_modules"),
-    path.join(home, "Library/Developer/Xcode/DerivedData/*"),
-  ];
-
   const found = await progress.step("Scanning cleanup targets", async () =>
-    fg(targets, {
-      dot: true,
-      unique: true,
-      onlyDirectories: true,
-      suppressErrors: true,
-    }),
+    scanDevCleanupTargets(home),
   );
 
-  const nodeModules = found.filter((entry) =>
-    entry.endsWith(`${path.sep}node_modules`),
-  );
-  const xcodeDerivedData = found.filter((entry) =>
-    entry.includes(
-      `${path.sep}Library${path.sep}Developer${path.sep}Xcode${path.sep}DerivedData${path.sep}`,
-    ),
-  );
-  const otherTargets =
-    found.length - nodeModules.length - xcodeDerivedData.length;
+  const targetInfos: CleanupTargetInfo[] = [];
+  for (const target of found.paths) {
+    let category: CleanupTargetInfo["category"] = "other";
+    if (target.endsWith(`${path.sep}node_modules`)) {
+      category = "node_modules";
+    } else if (
+      target.includes(
+        `${path.sep}Library${path.sep}Developer${path.sep}Xcode${path.sep}DerivedData${path.sep}`,
+      )
+    ) {
+      category = "xcode_derived_data";
+    }
 
-  console.log(chalk.bold("Developer cleanup targets"));
-  console.log(`- Total: ${found.length}`);
-  console.log(`- node_modules: ${nodeModules.length}`);
-  console.log(`- Xcode DerivedData: ${xcodeDerivedData.length}`);
-  if (otherTargets > 0) {
-    console.log(`- Other: ${otherTargets}`);
+    let bytes = 0;
+    try {
+      bytes = await pathSizeFast(target);
+    } catch {
+      bytes = 0;
+    }
+
+    targetInfos.push({ path: target, bytes, category });
   }
 
-  const preview = found.slice(0, 20);
-  if (preview.length > 0) {
-    console.log(chalk.dim("Sample targets (first 20)"));
-    for (const target of preview) {
-      console.log(chalk.dim(`- ${target}`));
+  if (found.truncated) {
+    console.log(
+      chalk.yellow(
+        `Scan limit reached (${DEV_CLEAN_MAX_TARGETS} node_modules folders). Restricting scope to keep memory usage stable.`,
+      ),
+    );
+  }
+
+  const nodeModules = targetInfos.filter(
+    (entry) => entry.category === "node_modules",
+  );
+  const xcodeDerivedData = targetInfos.filter(
+    (entry) => entry.category === "xcode_derived_data",
+  );
+  const otherTargets = targetInfos.filter((entry) => entry.category === "other");
+  const totalBytes = targetInfos.reduce((sum, entry) => sum + entry.bytes, 0);
+  const nodeModulesBytes = nodeModules.reduce((sum, entry) => sum + entry.bytes, 0);
+  const xcodeBytes = xcodeDerivedData.reduce((sum, entry) => sum + entry.bytes, 0);
+  const otherBytes = otherTargets.reduce((sum, entry) => sum + entry.bytes, 0);
+
+  console.log(chalk.bold("Developer cleanup targets"));
+  console.log(`- Total: ${targetInfos.length}`);
+  console.log(
+    `- node_modules: ${nodeModules.length} (${bytesToHuman(nodeModulesBytes)})`,
+  );
+  console.log(
+    `- Xcode DerivedData: ${xcodeDerivedData.length} (${bytesToHuman(xcodeBytes)})`,
+  );
+  if (otherTargets.length > 0) {
+    console.log(`- Other: ${otherTargets.length} (${bytesToHuman(otherBytes)})`);
+  }
+  console.log(chalk.cyan(`Estimated reclaimable: ${bytesToHuman(totalBytes)}`));
+
+  const largestTargets = [...targetInfos]
+    .sort((a, b) => b.bytes - a.bytes)
+    .slice(0, 10);
+  if (largestTargets.length > 0) {
+    console.log(chalk.dim("Largest targets"));
+    for (const target of largestTargets) {
+      console.log(chalk.dim(`- ${target.path} (${bytesToHuman(target.bytes)})`));
     }
   }
 
-  if (found.length > preview.length) {
+  const preview = targetInfos.slice(0, 20);
+  if (preview.length > 0) {
+    console.log(chalk.dim("Sample targets (first 20)"));
+    for (const target of preview) {
+      console.log(chalk.dim(`- ${target.path} (${bytesToHuman(target.bytes)})`));
+    }
+  }
+
+  if (targetInfos.length > preview.length) {
     console.log(
-      chalk.dim(`...and ${found.length - preview.length} more target(s).`),
+      chalk.dim(`...and ${targetInfos.length - preview.length} more target(s).`),
     );
   }
 
@@ -64,18 +325,20 @@ export async function devClean(dryRun = false, yes = false): Promise<void> {
   }
 
   let removedCount = 0;
+  let reclaimedBytes = 0;
   const failedTargets: Array<{ path: string; reason: string }> = [];
   await progress.step(
-    `Removing ${found.length} filesystem targets`,
+    `Removing ${targetInfos.length} filesystem targets`,
     async () => {
-      for (const target of found) {
+      for (const target of targetInfos) {
         try {
-          await removePath(target, dryRun);
+          await removePath(target.path, dryRun);
           removedCount += 1;
+          reclaimedBytes += target.bytes;
         } catch (error) {
           const message =
             error instanceof Error ? error.message : String(error);
-          failedTargets.push({ path: target, reason: message || "unknown" });
+          failedTargets.push({ path: target.path, reason: message || "unknown" });
         }
       }
     },
@@ -100,6 +363,9 @@ export async function devClean(dryRun = false, yes = false): Promise<void> {
   const actionWord = dryRun ? "Would remove" : "Removed";
   console.log(chalk.bold("Developer cleanup summary"));
   console.log(chalk.green(`- ${actionWord}: ${removedCount} targets`));
+  console.log(
+    chalk.cyan(`- ${dryRun ? "Potential reclaim" : "Reclaimed"}: ${bytesToHuman(reclaimedBytes)}`),
+  );
   console.log(chalk.yellow(`- Failed: ${failedTargets.length} targets`));
 
   if (failedTargets.length > 0) {
@@ -114,41 +380,89 @@ export async function devClean(dryRun = false, yes = false): Promise<void> {
 }
 
 export async function devReset(tool: string, dryRun = false): Promise<void> {
-  const progress = new CommandProgress(`Developer Reset (${tool})`, 2);
-  switch (tool) {
-    case "node": {
-      await progress.step("Uninstalling existing Node", async () =>
-        runCommand("brew", ["uninstall", "node"], {
-          dryRun,
-          allowFailure: true,
-        }),
-      );
-      await progress.step("Installing fresh Node", async () =>
-        runCommand("brew", ["install", "node"], {
-          dryRun,
-          allowFailure: true,
-        }),
-      );
-      break;
+  const plan = getDevResetPlan(tool);
+  const title =
+    tool === "node" ? "Node"
+    : tool === "python" ? "Python"
+    : tool === "ruby" ? "Ruby"
+    : tool === "rust" ? "Rust"
+    : tool === "go" ? "Go"
+    : tool;
+  const progress = new CommandProgress(`Developer Reset (${tool})`, 3);
+
+  const uninstallResult = await progress.step(
+    `Uninstalling existing ${title}`,
+    async () =>
+      runCommand("brew", ["uninstall", plan.brewPackage], {
+        dryRun,
+        allowFailure: true,
+      }),
+  );
+
+  const installResult = await progress.step(
+    `Installing fresh ${title}`,
+    async () =>
+      runCommand("brew", ["install", plan.brewPackage], {
+        dryRun,
+        allowFailure: true,
+      }),
+  );
+
+  const verifyResult = await progress.step(
+    `Verifying ${title} is available`,
+    async () =>
+      runCommand(plan.verifyCommand, plan.verifyArgs, {
+        dryRun,
+        allowFailure: true,
+      }),
+  );
+
+  const failedDetails: string[] = [];
+  if (uninstallResult.code !== 0) {
+    failedDetails.push(
+      `Uninstall failed: ${uninstallResult.stderr || uninstallResult.stdout || "unknown error"}`,
+    );
+  }
+  if (installResult.code !== 0) {
+    failedDetails.push(
+      `Install failed: ${installResult.stderr || installResult.stdout || "unknown error"}`,
+    );
+  }
+  if (verifyResult.code !== 0) {
+    failedDetails.push(
+      `Verification failed: ${verifyResult.stderr || verifyResult.stdout || "unknown error"}`,
+    );
+  }
+
+  if (!dryRun && failedDetails.length > 0) {
+    console.log(chalk.bold(`Developer reset failed for ${tool}.`));
+    for (const detail of failedDetails) {
+      console.log(chalk.yellow(`- ${detail}`));
     }
-    case "python": {
-      await progress.step("Uninstalling existing Python", async () =>
-        runCommand("brew", ["uninstall", "python"], {
-          dryRun,
-          allowFailure: true,
-        }),
-      );
-      await progress.step("Installing fresh Python", async () =>
-        runCommand("brew", ["install", "python"], {
-          dryRun,
-          allowFailure: true,
-        }),
-      );
-      break;
+
+    for (const line of buildDevManualRecovery(tool, plan)) {
+      console.log(chalk.dim(line));
     }
-    default:
-      throw new Error(`Unsupported tool reset target: ${tool}`);
+
+    throw new ActionableError({
+      code: "DEV_RESET_VERIFICATION_FAILED",
+      summary: `Developer reset verification failed for ${tool}.`,
+      details: failedDetails,
+      nextSteps: buildDevManualRecovery(tool, plan),
+    });
+  }
+
+  if (!dryRun) {
+    console.log(
+      chalk.green(
+        `Verification output: ${firstCommandOutput(verifyResult)}`,
+      ),
+    );
   }
 
   console.log(chalk.green(`Developer environment reset complete for ${tool}.`));
+  printNextCommands("Next commands:", [
+    `your doctor`,
+    `${plan.verifyCommand} ${plan.verifyArgs.join(" ")}`,
+  ]);
 }

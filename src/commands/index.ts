@@ -14,6 +14,7 @@ import { registerPlugin } from "./plugin.js";
 import { registerCompletion } from "./completion.js";
 import { registerTerminal } from "./terminal.js";
 import { registerBackup } from "./backup.js";
+import { registerUndo } from "./undo.js";
 
 export function registerCommands(program: Command): void {
   registerSetup(program);
@@ -31,4 +32,5 @@ export function registerCommands(program: Command): void {
   registerCompletion(program);
   registerTerminal(program);
   registerBackup(program);
+  registerUndo(program);
 }

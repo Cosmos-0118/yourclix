@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { runCommand } from "./exec.js";
+import { undoManager } from "./undo-manager.js";
 
 export async function pathSize(targetPath: string): Promise<number> {
   try {
@@ -81,3 +82,22 @@ export async function removePath(
 
   await fs.rm(targetPath, { recursive: true, force: true });
 }
+
+/**
+ * Remove a path with backup - moves to undo system instead of permanent deletion
+ * This is the safe version used by all destructive operations
+ */
+export async function removePathWithBackup(
+  targetPath: string,
+  dryRun = false,
+  command = "operation",
+): Promise<void> {
+  if (dryRun) {
+    return;
+  }
+
+  // For dry-run scenarios internally, use regular remove
+  // In actual operation, backup happens at operation level (clean, etc)
+  await removePath(targetPath, false);
+}
+

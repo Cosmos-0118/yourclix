@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { Command } from "commander";
+import { ActionableError, formatActionableError } from "./core/actionable-error.js";
 import { registerCommands } from "./commands/index.js";
 import {
   assertRuntimeRequirements,
@@ -25,6 +26,14 @@ program.hook("preAction", async (_thisCommand, actionCommand) => {
 });
 
 program.parseAsync(process.argv).catch((error: unknown) => {
+  if (error instanceof ActionableError) {
+    for (const line of formatActionableError(error)) {
+      console.error(line);
+    }
+    process.exitCode = 1;
+    return;
+  }
+
   const message = error instanceof Error ? error.message : String(error);
   console.error(`Error: ${message}`);
   process.exitCode = 1;

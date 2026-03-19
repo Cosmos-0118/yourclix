@@ -19,6 +19,7 @@ import {
   type HeuristicSkipRecord,
   type ValidatedDeletionCandidate,
 } from "./clean-heuristics.js";
+import { undoManager } from "../core/undo-manager.js";
 
 interface DeletionCandidate {
   path: string;
@@ -52,7 +53,7 @@ export async function scanCleanerTargets(
           suppressErrors: true,
         });
 
-        const distinct = [...new Set(matches)].slice(0, 2000);
+        const distinct = [...new Set(matches)];
         const bytes = await sumPathSizesFast(distinct, 12);
 
         return {
@@ -67,6 +68,11 @@ export async function scanCleanerTargets(
       progress.info(
         `${result.category}: ${bytesToHuman(result.bytes)} across ${result.paths.length} paths`,
       );
+      if (result.paths.length > 2000) {
+        progress.info(
+          `${result.category}: large result set detected (${result.paths.length} paths).`,
+        );
+      }
       results.push(result);
     } else {
       progress.info(`${result.category}: no cleanup candidates`);
@@ -168,18 +174,26 @@ export async function executeCleaner(
   const progress = new CommandProgress("Cleanup Execution", 1);
   let deletedCount = 0;
   let reclaimedBytes = 0;
+  let backupId: string | null = null;
+
   await progress.step(`Removing ${candidates.length} valid paths`, async () => {
-    for (const candidate of candidates) {
-      try {
-        await removePath(candidate.path, Boolean(options.dryRun));
-        deletedCount += 1;
-        reclaimedBytes += candidate.bytes;
-      } catch (error) {
-        skipped.push({
-          path: candidate.path,
-          reason: getSkipReason(error),
-        });
-      }
+    if (options.dryRun) {
+      // In dry-run, just simulate deletion
+      deletedCount = candidates.length;
+      reclaimedBytes = candidates.reduce((sum, c) => sum + c.bytes, 0);
+    } else {
+      // Create backup of all files to be deleted
+      const candidatePaths = candidates.map((c) => c.path);
+      const backup = await undoManager.createBackup(
+        candidatePaths,
+        "clean",
+        [options.mode],
+      );
+      backupId = backup.id;
+
+      // All files were successfully moved to backup
+      deletedCount = backup.filesCount;
+      reclaimedBytes = backup.byteSize;
     }
   });
 
@@ -198,6 +212,15 @@ export async function executeCleaner(
   console.log(
     chalk.cyan(`- ${reclaimedLabel}: ${bytesToHuman(reclaimedBytes)}`),
   );
+
+  if (backupId && !options.dryRun) {
+    console.log(
+      chalk.green(
+        `\n✓ Files backed up to: ~/.your-backups/${backupId}`,
+      ),
+    );
+    console.log(chalk.dim(`  Restore with: your undo restore ${backupId}`));
+  }
 
   printSkippedDetails(skipped);
 }

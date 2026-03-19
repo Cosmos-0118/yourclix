@@ -1,6 +1,9 @@
 import chalk from "chalk";
+import { ActionableError } from "../core/actionable-error.js";
+import { printNextCommands } from "../core/next-steps.js";
 import { runCommand } from "../core/exec.js";
 import { CommandProgress } from "../core/progress.js";
+import { buildManualRecoveryDetails } from "../core/reconfigure.js";
 
 type SpotlightStepStatus = "success" | "failed" | "skipped";
 
@@ -56,6 +59,34 @@ function skippedStep(
   };
 }
 
+function parseSpotlightStatusState(output: string):
+  | "enabled"
+  | "disabled"
+  | "unknown" {
+  const normalized = output.toLowerCase();
+  if (normalized.includes("indexing enabled")) {
+    return "enabled";
+  }
+
+  if (
+    normalized.includes("indexing and searching disabled") ||
+    normalized.includes("indexing disabled")
+  ) {
+    return "disabled";
+  }
+
+  return "unknown";
+}
+
+function spotlightManualRecovery(target: string): string[] {
+  return buildManualRecoveryDetails("Manual recovery checklist:", [
+    `Run: sudo mdutil -i on ${target}`,
+    `Run: sudo mdutil -E ${target}`,
+    `Run: mdutil -s ${target}`,
+    "If status still shows disabled, reboot macOS and run the commands again.",
+  ]);
+}
+
 async function runSpotlightStep(
   name: string,
   command: string,
@@ -99,7 +130,7 @@ export async function spotlightReset(
   targetPath?: string,
   dryRun = false,
 ): Promise<void> {
-  const progress = new CommandProgress("Spotlight Reset", 5);
+  const progress = new CommandProgress("Spotlight Reset", 6);
   const target = targetPath ?? "/";
   const steps: SpotlightStepResult[] = [];
 
@@ -230,6 +261,14 @@ export async function spotlightReset(
         "Skipped because sudo precheck failed.",
       ),
     );
+    steps.push(
+      skippedStep(
+        "Verify indexing state",
+        `mdutil -s ${target}`,
+        true,
+        "Skipped because sudo precheck failed.",
+      ),
+    );
   } else {
     const disableStep = await progress.step(
       `Disabling index on ${target}`,
@@ -270,6 +309,14 @@ export async function spotlightReset(
           "Skipped because disable step failed.",
         ),
       );
+      steps.push(
+        skippedStep(
+          "Verify indexing state",
+          `mdutil -s ${target}`,
+          true,
+          "Skipped because disable step failed.",
+        ),
+      );
     } else {
       const eraseStep = await progress.step(`Erasing index on ${target}`, () =>
         runSpotlightStep(
@@ -300,6 +347,14 @@ export async function spotlightReset(
             "Skipped because erase step failed.",
           ),
         );
+        steps.push(
+          skippedStep(
+            "Verify indexing state",
+            `mdutil -s ${target}`,
+            true,
+            "Skipped because erase step failed.",
+          ),
+        );
       } else {
         const enableStep = await progress.step(
           `Re-enabling index on ${target}`,
@@ -324,6 +379,14 @@ export async function spotlightReset(
               "Skipped because re-enable step failed.",
             ),
           );
+          steps.push(
+            skippedStep(
+              "Verify indexing state",
+              `mdutil -s ${target}`,
+              true,
+              "Skipped because re-enable step failed.",
+            ),
+          );
         } else {
           const statusStep = await progress.step(
             "Fetching indexing status",
@@ -337,6 +400,58 @@ export async function spotlightReset(
               ),
           );
           steps.push(statusStep);
+
+          const verifyStep = await progress.step(
+            "Verifying indexing state",
+            async () => {
+              if (dryRun) {
+                return {
+                  name: "Verify indexing state",
+                  command: `mdutil -s ${target}`,
+                  status: "skipped",
+                  critical: true,
+                  details: ["Dry-run: indexing verification skipped."],
+                } satisfies SpotlightStepResult;
+              }
+
+              const state = parseSpotlightStatusState(statusStep.details[0] ?? "");
+
+              if (state === "enabled") {
+                return {
+                  name: "Verify indexing state",
+                  command: `mdutil -s ${target}`,
+                  status: "success",
+                  critical: true,
+                  details: ["Spotlight indexing is enabled after reset."],
+                } satisfies SpotlightStepResult;
+              }
+
+              if (state === "disabled") {
+                return {
+                  name: "Verify indexing state",
+                  command: `mdutil -s ${target}`,
+                  status: "failed",
+                  critical: true,
+                  details: [
+                    "Spotlight indexing is still disabled after reset.",
+                    ...spotlightManualRecovery(target),
+                  ],
+                } satisfies SpotlightStepResult;
+              }
+
+              return {
+                name: "Verify indexing state",
+                command: `mdutil -s ${target}`,
+                status: "skipped",
+                critical: false,
+                details: [
+                  "Could not confidently parse Spotlight status output.",
+                  ...spotlightManualRecovery(target),
+                ],
+              } satisfies SpotlightStepResult;
+            },
+          );
+          steps.push(verifyStep);
         }
       }
     }
@@ -345,11 +460,20 @@ export async function spotlightReset(
   printSpotlightSummary(target, steps);
 
   if (hasCriticalFailure(steps)) {
-    throw new Error("One or more critical Spotlight reset steps failed.");
+    throw new ActionableError({
+      code: "SPOTLIGHT_RESET_CRITICAL_FAILURE",
+      summary: "One or more critical Spotlight reset steps failed.",
+      nextSteps: spotlightManualRecovery(target),
+      details: ["Run 'your spotlight status' after applying manual recovery."],
+    });
   }
 
   console.log(chalk.green(`Spotlight reset triggered for ${target}.`));
   console.log(
     chalk.dim("Tip: Use 'your spotlight status' to watch indexing progress."),
   );
+  printNextCommands("Next commands:", [
+    "your spotlight status",
+    "your doctor",
+  ]);
 }
