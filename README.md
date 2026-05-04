@@ -35,7 +35,8 @@ your net fix [--dry-run]
 your net reset [--dry-run] [-y]
 your spotlight status
 your spotlight reset [--path /target] [--dry-run]
-your brew doctor|clean|upgrade|optimize [--dry-run]
+your brew doctor|clean|optimize [--dry-run]
+your brew upgrade [--dry-run] [--verbose]
 your doctor
 your fix [--dry-run] [-y]
 your dev clean [--dry-run] [-y]

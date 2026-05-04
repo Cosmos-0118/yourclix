@@ -23,9 +23,15 @@ export function registerBrew(program: Command): void {
   });
 
   withGlobalOptions(
-    brew.command("upgrade").description("Update and upgrade Homebrew packages"),
+    brew
+      .command("upgrade")
+      .description("Update and upgrade Homebrew packages")
+      .option(
+        "--verbose",
+        "show full Homebrew output (every ln/rm/pour line from brew)",
+      ),
   ).action(async (options) => {
-    await brewUpgrade(Boolean(options.dryRun));
+    await brewUpgrade(Boolean(options.dryRun), Boolean(options.verbose));
   });
 
   withGlobalOptions(

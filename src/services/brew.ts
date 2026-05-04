@@ -101,32 +101,47 @@ export async function brewClean(dryRun = false): Promise<void> {
   console.log(chalk.green("Brew cleanup complete."));
 }
 
-export async function brewUpgrade(dryRun = false): Promise<void> {
+export async function brewUpgrade(
+  dryRun = false,
+  verbose = false,
+): Promise<void> {
   const outdated = await getOutdatedPackages();
   const totalTargets = outdated.formulae.length + outdated.casks.length;
   const stepCount = 1 + Math.max(totalTargets, 1);
 
+  const streamOpts = { verbose, heartbeatMs: 45_000 } as const;
+
   console.log(
     boxen(
       [
-        chalk.dim(
-          totalTargets > 0 ?
-            `${outdated.formulae.length} outdated formula · ${outdated.casks.length} outdated cask${outdated.casks.length === 1 ? "" : "s"}`
-          : "No outdated formulae or casks",
+        chalk.white.bold("Plan"),
+        "",
+        chalk.green(
+          `  Formulae to upgrade     ${chalk.bold(String(outdated.formulae.length))}`,
+        ),
+        chalk.magenta(
+          `  Casks to upgrade        ${chalk.bold(String(outdated.casks.length))}`,
         ),
         "",
-        chalk.gray(
-          "brew runs with --verbose and live stdio (git fetches, downloads, pours).",
-        ),
+        verbose ?
+          chalk.dim(
+            "Full Homebrew output (every pour / symlink / rm line) — same as brew --verbose.",
+          )
+        : [
+            chalk.gray(
+              "You will see summaries, git fetch, downloads, pours, and errors — not thousands of ln -s lines.",
+            ),
+            chalk.dim(
+              "Pass --verbose on this command for the complete brew transcript.",
+            ),
+          ].join("\n"),
+        "",
         chalk.dim(
-          "brew update can take several minutes over git — scroll above for activity.",
-        ),
-        chalk.dim(
-          "If it seems idle, a faint status line appears every 45s during brew update.",
+          "brew update can sit quiet on slow networks — a faint heartbeat prints every 45s.",
         ),
       ].join("\n"),
       {
-        title: chalk.bold.white(" Brew upgrade "),
+        title: chalk.bold.white(" your brew upgrade "),
         titleAlignment: "center",
         borderStyle: "round",
         borderColor: "cyan",
@@ -150,7 +165,7 @@ export async function brewUpgrade(dryRun = false): Promise<void> {
         true,
         false,
         true,
-        { heartbeatMs: 45_000 },
+        streamOpts,
       ),
   );
   steps.push(updateStep);
@@ -207,10 +222,11 @@ export async function brewUpgrade(dryRun = false): Promise<void> {
         runBrewStep(
           `Upgrade formula ${pkg}`,
           "brew",
-          ["upgrade", "--verbose", pkg],
+          [...(verbose ? ["upgrade", "--verbose", pkg] : ["upgrade", pkg])],
           true,
           false,
           true,
+          streamOpts,
         ),
     );
     steps.push(step);
@@ -235,21 +251,43 @@ export async function brewUpgrade(dryRun = false): Promise<void> {
         runBrewStep(
           `Upgrade cask ${cask}`,
           "brew",
-          ["upgrade", "--verbose", "--cask", cask],
+          [
+            ...(verbose ?
+              ["upgrade", "--verbose", "--cask", cask]
+            : ["upgrade", "--cask", cask]),
+          ],
           true,
           false,
           true,
+          streamOpts,
         ),
     );
     steps.push(step);
   }
 
   if (totalTargets > 0) {
+    const rows = [
+      ...outdated.formulae.map(
+        (pkg) => `${chalk.green("●")}  ${chalk.bold("formula")}  ${pkg}`,
+      ),
+      ...outdated.casks.map(
+        (cask) => `${chalk.magenta("●")}  ${chalk.bold("cask")}    ${cask}`,
+      ),
+    ];
+
     console.log(
-      chalk.bold(dryRun ? "Planned upgrade targets" : "Upgraded targets"),
+      boxen(rows.join("\n"), {
+        title:
+          chalk.bold.white(
+            dryRun ? " Planned targets " : " Upgrade targets ",
+          ),
+        titleAlignment: "left",
+        borderStyle: "round",
+        borderColor: "green",
+        padding: { left: 1, right: 1, top: 0, bottom: 0 },
+        margin: { top: 1, bottom: 0 },
+      }),
     );
-    outdated.formulae.forEach((pkg) => console.log(`- formula: ${pkg}`));
-    outdated.casks.forEach((cask) => console.log(`- cask: ${cask}`));
   }
 
   printBrewSummary("your brew upgrade", steps);
@@ -264,7 +302,7 @@ export async function brewUpgrade(dryRun = false): Promise<void> {
 export async function brewOptimize(dryRun = false): Promise<void> {
   console.log(chalk.bold("Pre-cleanup doctor pass"));
   await brewDoctor(dryRun);
-  await brewUpgrade(dryRun);
+  await brewUpgrade(dryRun, false);
   await brewClean(dryRun);
 
   console.log(chalk.bold("Post-cleanup doctor pass"));
