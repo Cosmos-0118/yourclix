@@ -19,6 +19,7 @@ export function registerClean(program: Command): void {
       .option("--system", "system-wide cleanup mode (advanced)")
       .option("--days <days>", "delete only files older than this many days")
       .option("--verify", "run cleaner self-check and exit")
+      .option("-v, --verbose", "show full paths for skipped items and details")
       .option("--mode <mode>", "run level: basic | deep | system", "basic")
       .addHelpText(
         "after",
@@ -50,6 +51,7 @@ Examples:
       olderThanDays,
       dryRun: options.dryRun,
       yes: options.yes,
+      verbose: Boolean(options.verbose),
     });
   });
 }

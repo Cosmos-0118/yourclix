@@ -2,7 +2,24 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { runCommand } from "./exec.js";
-import { undoManager } from "./undo-manager.js";
+
+/**
+ * When globs return both a directory and paths inside it, only the ancestor
+ * path would be deleted — sum sizes once to avoid inflated estimates.
+ */
+export function filterToAncestorRoots(paths: string[]): string[] {
+  const normalized = [...new Set(paths.map((p) => path.normalize(p)))].sort(
+    (a, b) => a.length - b.length,
+  );
+  const kept: string[] = [];
+  for (const p of normalized) {
+    if (kept.some((k) => p === k || p.startsWith(k + path.sep))) {
+      continue;
+    }
+    kept.push(p);
+  }
+  return kept;
+}
 
 export async function pathSize(targetPath: string): Promise<number> {
   try {
@@ -42,25 +59,18 @@ export async function sumPathSizesFast(
   paths: string[],
   concurrency = 12,
 ): Promise<number> {
-  if (paths.length === 0) {
+  const deduped = filterToAncestorRoots(paths);
+  if (deduped.length === 0) {
     return 0;
   }
 
-  let index = 0;
   let total = 0;
+  for (let i = 0; i < deduped.length; i += concurrency) {
+    const batch = deduped.slice(i, i + concurrency);
+    const sizes = await Promise.all(batch.map((p) => pathSizeFast(p)));
+    total += sizes.reduce((sum, n) => sum + n, 0);
+  }
 
-  const workers = Array.from(
-    { length: Math.min(concurrency, paths.length) },
-    async () => {
-      while (index < paths.length) {
-        const currentIndex = index;
-        index += 1;
-        total += await pathSizeFast(paths[currentIndex]);
-      }
-    },
-  );
-
-  await Promise.all(workers);
   return total;
 }
 

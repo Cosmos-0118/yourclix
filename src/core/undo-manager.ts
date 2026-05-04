@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import chalk from "chalk";
+import { pathSizeFast } from "./fs-utils.js";
 
 /**
  * UndoManager: Central system for tracking and managing deletions
@@ -34,6 +35,12 @@ export interface BackupItem {
   bytes: number;
 }
 
+export interface CreateBackupResult {
+  metadata: BackupMetadata;
+  /** Non-fatal issues (e.g. path vanished before backup); print after UI steps */
+  warnings: string[];
+}
+
 const BACKUPS_DIR = path.join(os.homedir(), ".your-backups");
 const REGISTRY_FILE = path.join(BACKUPS_DIR, ".registry.json");
 const DEFAULT_RETENTION_DAYS = 30;
@@ -64,7 +71,7 @@ class UndoManager {
     filesToBackup: string[],
     command: string,
     args: string[] = [],
-  ): Promise<BackupMetadata> {
+  ): Promise<CreateBackupResult> {
     await this.init();
 
     if (filesToBackup.length === 0) {
@@ -74,6 +81,7 @@ class UndoManager {
     const timestamp = Date.now();
     const id = `undo-${new Date(timestamp).toISOString().split("T")[0]}-${String(timestamp).slice(-5)}`;
     const backupDir = path.join(BACKUPS_DIR, id);
+    const warnings: string[] = [];
 
     try {
       await fs.mkdir(backupDir, { recursive: true });
@@ -83,9 +91,9 @@ class UndoManager {
 
       for (const filePath of filesToBackup) {
         try {
-          // Get file stats before moving
-          const stats = await fs.lstat(filePath);
-          totalBytes += stats.size;
+          await fs.lstat(filePath);
+          const itemBytes = await pathSizeFast(filePath);
+          totalBytes += itemBytes;
 
           // Create relative path structure in backup
           const homeDir = os.homedir();
@@ -99,9 +107,9 @@ class UndoManager {
           await fs.rename(filePath, backupPath);
           successCount += 1;
         } catch (error) {
-          console.warn(
-            chalk.yellow(`  Warning: Failed to backup ${filePath}: ${error}`),
-          );
+          const msg =
+            error instanceof Error ? error.message : String(error);
+          warnings.push(`Could not back up ${filePath}: ${msg}`);
         }
       }
 
@@ -117,7 +125,7 @@ class UndoManager {
       };
 
       await this.addToRegistry(metadata);
-      return metadata;
+      return { metadata, warnings };
     } catch (error) {
       console.error(chalk.red(`Backup failed: ${error}`));
       throw error;

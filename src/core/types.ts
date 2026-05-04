@@ -8,6 +8,8 @@ export interface GlobalOptions {
 export interface CleanerOptions extends GlobalOptions {
   mode: RunLevel;
   olderThanDays?: number;
+  /** Show full filesystem paths in skipped-item output */
+  verbose?: boolean;
 }
 
 export interface Issue {
