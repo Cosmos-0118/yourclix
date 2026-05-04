@@ -68,6 +68,32 @@ export class CommandProgress {
     return result;
   }
 
+  /**
+   * Ora step that reflects success / failed / skipped (e.g. network repair steps).
+   */
+  async stepNetwork<T extends { status: "success" | "failed" | "skipped" }>(
+    label: string,
+    task: () => Promise<T>,
+  ): Promise<T> {
+    this.current += 1;
+    const prefix = `[${this.current}/${this.totalSteps}]`;
+    const spinner = ora(`${prefix} ${label}`).start();
+    try {
+      const result = await task();
+      if (result.status === "failed") {
+        spinner.fail(chalk.red(`${prefix} ${label}`));
+      } else if (result.status === "skipped") {
+        spinner.warn(chalk.yellow(`${prefix} ${label}`));
+      } else {
+        spinner.succeed(chalk.green(`${prefix} ${label}`));
+      }
+      return result;
+    } catch (error) {
+      spinner.fail(chalk.red(`${prefix} ${label}`));
+      throw error;
+    }
+  }
+
   tick(label: string): void {
     this.current += 1;
     const prefix = `[${this.current}/${this.totalSteps}]`;

@@ -1,4 +1,3 @@
-import { execSync } from "node:child_process";
 import fs from "node:fs/promises";
 import { writeSync } from "node:fs";
 import os from "node:os";
@@ -62,43 +61,41 @@ function ttyWrite(data: string): void {
 }
 
 /**
- * Clear scrollback + screen + optional RIS. No console output — must stay silent
- * so the display stays empty after this runs.
+ * Hard reset the visible display and scrollback using only CSI/RIS — no `clear(1)` /
+ * `tput clear`. Those invoke terminfo “scroll to clear” on many macOS setups and leave
+ * the shell prompt stranded mid-viewport (empty band above the prompt) with themes like
+ * Powerlevel10k.
+ *
+ * Sequence: leave alternate screen if stuck → iTerm scrollback → erase saved lines →
+ * erase display → cursor home → optional full RIS → SGR reset → home again.
  */
-/** Terminfo-driven clear so the emulator applies the right erase ops for this TERM. */
-function tryTerminfoClear(): void {
-  for (const bin of ["/usr/bin/clear", "/bin/clear"]) {
-    try {
-      execSync(bin, { stdio: "inherit", env: process.env });
-      return;
-    } catch {
-      /* try next */
-    }
-  }
-  try {
-    execSync("tput clear", { stdio: "inherit", env: process.env, shell: "/bin/sh" });
-  } catch {
-    /* escapes already sent */
-  }
-}
-
 function performSilentTerminalClean(soft: boolean): void {
   if (!process.stdout.isTTY) {
     return;
   }
 
+  const parts: string[] = [];
+
+  // If something left the terminal in the alternate screen (vim, etc.), drop back first.
+  parts.push(`${ESC}[?1049l`);
+
   if (process.env.TERM_PROGRAM === "iTerm.app") {
-    ttyWrite(`${ESC}]1337;ClearScrollback\x07`);
+    parts.push(`${ESC}]1337;ClearScrollback\x07`);
   }
 
-  ttyWrite(`${ESC}[3J`);
-  ttyWrite(`${ESC}[2J${ESC}[H`);
+  // Saved scrollback, then current screen; separate writes not needed — one atomic blob.
+  parts.push(`${ESC}[3J`, `${ESC}[2J`, `${ESC}[H`);
 
   if (!soft) {
-    ttyWrite("\x1bc");
+    // Full reset (fonts/colors/modes). Follow with explicit home — some emulators leave
+    // the logical cursor in an odd row after RIS.
+    parts.push("\x1bc", `${ESC}[0m`, `${ESC}[H`);
+  } else {
+    // Soft: still normalize attributes so the next redraw isn’t on stale graphic state.
+    parts.push(`${ESC}[0m`, `${ESC}[H`);
   }
 
-  tryTerminfoClear();
+  ttyWrite(parts.join(""));
 }
 
 export async function runTerminalClean(
@@ -109,13 +106,16 @@ export async function runTerminalClean(
 ): Promise<void> {
   if (dryRun) {
     const steps = [
+      "CSI ?1049 l — exit alternate screen if active",
       process.env.TERM_PROGRAM === "iTerm.app" ?
         "iTerm: CSI ? Clear scrollback"
       : null,
       "CSI 3 J — erase scrollback",
-      "CSI 2 J + CSI H — erase screen, cursor home",
-      soft ? "(soft: skip RIS)" : "ESC c — full terminal reset (RIS)",
-      "clear(1) or tput clear — terminfo sync for this TERM",
+      "CSI 2 J — erase display; CSI H — cursor home",
+      soft ?
+        "CSI 0 m + CSI H — SGR reset, cursor home (no RIS)"
+      : "ESC c (RIS) — full terminal reset; then CSI 0 m + CSI H",
+      "No clear(1)/tput — avoids scroll-based clear that breaks prompt position",
     ].filter(Boolean) as string[];
 
     console.log(

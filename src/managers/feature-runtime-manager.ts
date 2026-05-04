@@ -20,8 +20,12 @@ const FEATURE_REQUIREMENTS: Record<string, Requirement[]> = {
   ],
   clean: [{ command: "find", level: "required" }],
   "net fix": [
+    { command: "route", level: "required" },
+    { command: "arp", level: "required" },
+    { command: "scutil", level: "required" },
     { command: "networksetup", level: "required" },
     { command: "dscacheutil", level: "required" },
+    { command: "sudo", level: "required" },
   ],
   "net reset": [
     { command: "sudo", level: "required" },

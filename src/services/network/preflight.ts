@@ -8,7 +8,7 @@ export async function ensureSudoReady(
 ): Promise<NetworkStepResult> {
   if (dryRun) {
     return {
-      name: "Sudo precheck",
+      name: "Checking sudo readiness",
       critical: true,
       status: "skipped",
       details: ["Dry-run: sudo precheck skipped."],
@@ -21,7 +21,7 @@ export async function ensureSudoReady(
   if (noPrompt.code === 0) {
     await logger.log("sudo precheck passed without prompt");
     return {
-      name: "Sudo precheck",
+      name: "Checking sudo readiness",
       critical: true,
       status: "success",
       details: ["Sudo credentials already valid."],
@@ -31,7 +31,7 @@ export async function ensureSudoReady(
   if (!process.stdin.isTTY) {
     await logger.log("sudo precheck failed in non-interactive session");
     return {
-      name: "Sudo precheck",
+      name: "Checking sudo readiness",
       critical: true,
       status: "failed",
       details: [
@@ -53,7 +53,7 @@ export async function ensureSudoReady(
   if (promptResult.code === 0) {
     await logger.log("sudo precheck passed after interactive auth");
     return {
-      name: "Sudo precheck",
+      name: "Checking sudo readiness",
       critical: true,
       status: "success",
       details: ["Sudo credentials refreshed."],
@@ -61,7 +61,7 @@ export async function ensureSudoReady(
   }
 
   return {
-    name: "Sudo precheck",
+    name: "Checking sudo readiness",
     critical: true,
     status: "failed",
     details: [promptResult.stderr || "Failed to validate sudo credentials."],
