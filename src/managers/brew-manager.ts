@@ -99,6 +99,18 @@ export function printCleanupResult(output: string, dryRun: boolean): void {
   }
 }
 
+/** Env helps brew/git print color + avoid pager stalls when streaming. */
+const BREW_STREAM_ENV: NodeJS.ProcessEnv = {
+  HOMEBREW_COLOR: "1",
+  GIT_TERMINAL_PROMPT: "0",
+  PAGER: "cat",
+};
+
+export interface BrewStreamOptions {
+  /** Dim stderr pulse while brew runs (TTY only); brew update can sit silent for minutes. */
+  heartbeatMs?: number;
+}
+
 export async function runBrewStep(
   name: string,
   command: string,
@@ -107,11 +119,15 @@ export async function runBrewStep(
   dryRun: boolean,
   /** Pipe brew stdout/stderr through to the terminal (download/git progress). */
   streamOutput = false,
+  streamOpts?: BrewStreamOptions,
 ): Promise<BrewStepResult> {
   const result = await runCommand(command, args, {
     dryRun,
     allowFailure: true,
     stdio: streamOutput && !dryRun ? "inherit" : undefined,
+    env: streamOutput && !dryRun ? BREW_STREAM_ENV : undefined,
+    heartbeatMs:
+      streamOutput && !dryRun ? streamOpts?.heartbeatMs : undefined,
   });
 
   let detail: string;

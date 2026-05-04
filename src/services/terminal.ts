@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import fs from "node:fs/promises";
 import { writeSync } from "node:fs";
 import os from "node:os";
@@ -64,6 +65,23 @@ function ttyWrite(data: string): void {
  * Clear scrollback + screen + optional RIS. No console output — must stay silent
  * so the display stays empty after this runs.
  */
+/** Terminfo-driven clear so the emulator applies the right erase ops for this TERM. */
+function tryTerminfoClear(): void {
+  for (const bin of ["/usr/bin/clear", "/bin/clear"]) {
+    try {
+      execSync(bin, { stdio: "inherit", env: process.env });
+      return;
+    } catch {
+      /* try next */
+    }
+  }
+  try {
+    execSync("tput clear", { stdio: "inherit", env: process.env, shell: "/bin/sh" });
+  } catch {
+    /* escapes already sent */
+  }
+}
+
 function performSilentTerminalClean(soft: boolean): void {
   if (!process.stdout.isTTY) {
     return;
@@ -79,6 +97,8 @@ function performSilentTerminalClean(soft: boolean): void {
   if (!soft) {
     ttyWrite("\x1bc");
   }
+
+  tryTerminfoClear();
 }
 
 export async function runTerminalClean(
@@ -95,6 +115,7 @@ export async function runTerminalClean(
       "CSI 3 J — erase scrollback",
       "CSI 2 J + CSI H — erase screen, cursor home",
       soft ? "(soft: skip RIS)" : "ESC c — full terminal reset (RIS)",
+      "clear(1) or tput clear — terminfo sync for this TERM",
     ].filter(Boolean) as string[];
 
     console.log(
@@ -126,7 +147,7 @@ export async function runTerminalClean(
   if (!process.stdout.isTTY) {
     console.error(
       chalk.yellow(
-        "your terminal clean: stdout is not a TTY — open an interactive terminal window.",
+        "your terminal: stdout is not a TTY — open an interactive terminal window.",
       ),
     );
     return;

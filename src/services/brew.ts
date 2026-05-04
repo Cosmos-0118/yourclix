@@ -116,9 +116,14 @@ export async function brewUpgrade(dryRun = false): Promise<void> {
         ),
         "",
         chalk.gray(
-          "brew update + each upgrade stream live (git fetches, downloads, pours).",
+          "brew runs with --verbose and live stdio (git fetches, downloads, pours).",
         ),
-        chalk.dim("Use a wide terminal for progress bars."),
+        chalk.dim(
+          "brew update can take several minutes over git — scroll above for activity.",
+        ),
+        chalk.dim(
+          "If it seems idle, a faint status line appears every 45s during brew update.",
+        ),
       ].join("\n"),
       {
         title: chalk.bold.white(" Brew upgrade "),
@@ -137,7 +142,16 @@ export async function brewUpgrade(dryRun = false): Promise<void> {
 
   const updateStep = await progress.interactiveStepWithStatus(
     "brew update — refresh taps & metadata",
-    () => runBrewStep("Brew update", "brew", ["update"], true, false, true),
+    () =>
+      runBrewStep(
+        "Brew update",
+        "brew",
+        ["update", "--verbose"],
+        true,
+        false,
+        true,
+        { heartbeatMs: 45_000 },
+      ),
   );
   steps.push(updateStep);
 
@@ -193,7 +207,7 @@ export async function brewUpgrade(dryRun = false): Promise<void> {
         runBrewStep(
           `Upgrade formula ${pkg}`,
           "brew",
-          ["upgrade", pkg],
+          ["upgrade", "--verbose", pkg],
           true,
           false,
           true,
@@ -221,7 +235,7 @@ export async function brewUpgrade(dryRun = false): Promise<void> {
         runBrewStep(
           `Upgrade cask ${cask}`,
           "brew",
-          ["upgrade", "--cask", cask],
+          ["upgrade", "--verbose", "--cask", cask],
           true,
           false,
           true,

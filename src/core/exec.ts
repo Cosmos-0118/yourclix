@@ -6,6 +6,11 @@ export interface ExecOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   stdio?: "pipe" | "inherit";
+  /**
+   * Print a dim status line to stderr every N ms while the process runs (TTY only).
+   * Useful when brew/git emit little output for minutes with inherited stdio.
+   */
+  heartbeatMs?: number;
 }
 
 export interface ExecResult {
@@ -49,7 +54,31 @@ export async function runCommand(
       stderr += chunk.toString();
     });
 
+    const hbMs = options.heartbeatMs ?? 0;
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
+    if (
+      hbMs > 0 &&
+      useInheritedStdio &&
+      process.stderr.isTTY
+    ) {
+      const hint = `${command} ${args.slice(0, 3).join(" ")}…`;
+      heartbeat = setInterval(() => {
+        const time = new Date().toLocaleTimeString();
+        console.error(
+          `\x1b[2m…still running ${hint} (${time})\x1b[0m`,
+        );
+      }, hbMs);
+    }
+
+    const finishHeartbeat = () => {
+      if (heartbeat) {
+        clearInterval(heartbeat);
+        heartbeat = undefined;
+      }
+    };
+
     child.on("error", (error) => {
+      finishHeartbeat();
       if (options.allowFailure) {
         resolve({
           code: 1,
@@ -63,6 +92,7 @@ export async function runCommand(
     });
 
     child.on("close", (code) => {
+      finishHeartbeat();
       const result: ExecResult = {
         code: code ?? 1,
         stdout: stdout.trim(),
