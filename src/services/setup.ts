@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import boxen from "boxen";
 import chalk from "chalk";
 import ora from "ora";
 import { runCommand, type ExecResult } from "../core/exec.js";
@@ -54,6 +55,57 @@ const APP_BUNDLES: Record<AppsMode, string[]> = {
     "raycast",
   ],
 };
+
+/** Friendly names for Homebrew casks (shown before install confirmation). */
+const CASK_LABELS: Record<string, string> = {
+  "visual-studio-code": "Visual Studio Code",
+  "google-chrome": "Google Chrome",
+  firefox: "Mozilla Firefox",
+  docker: "Docker Desktop",
+  postman: "Postman",
+  raycast: "Raycast",
+  iterm2: "iTerm2",
+  slack: "Slack",
+  notion: "Notion",
+  rectangle: "Rectangle",
+};
+
+function formatCaskLabel(caskId: string): string {
+  if (CASK_LABELS[caskId]) {
+    return CASK_LABELS[caskId];
+  }
+  const leaf = caskId.includes("/") ? caskId.split("/").pop()! : caskId;
+  return leaf
+    .split("-")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+function printDesktopAppBundlePreview(bundleName: AppsMode, casks: string[]): void {
+  if (casks.length === 0) {
+    return;
+  }
+
+  const lines = casks.map(
+    (id) =>
+      `${chalk.cyan("  ▸")} ${chalk.bold.white(formatCaskLabel(id))} ${chalk.dim(`· ${id}`)}`,
+  );
+
+  console.log(
+    boxen(
+      [chalk.gray("Homebrew will install:"), "", ...lines].join("\n"),
+      {
+        title: chalk.bold.white(` ${bundleName} bundle `),
+        titleAlignment: "center",
+        padding: { left: 1, right: 1, top: 0, bottom: 0 },
+        margin: { top: 1, bottom: 0 },
+        borderStyle: "round",
+        borderColor: "cyan",
+        dimBorder: false,
+      },
+    ),
+  );
+}
 
 const ZSH_SETUP_BLOCK_START = "# >>> setup.ts managed block >>>";
 const ZSH_SETUP_BLOCK_END = "# <<< setup.ts managed block <<<";
@@ -697,8 +749,9 @@ async function resolveAppsModeFromPrompt(
   }
 
   if (effective.appMode !== "none") {
+    printDesktopAppBundlePreview(effective.appMode, effective.casks);
     const approved = await confirm(
-      `Install desktop app bundle '${effective.appMode}' (${effective.casks.length} apps)?`,
+      `Install these ${effective.casks.length} desktop app${effective.casks.length === 1 ? "" : "s"} now?`,
       false,
     );
     return approved ? effective.appMode : "none";

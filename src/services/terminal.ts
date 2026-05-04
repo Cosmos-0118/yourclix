@@ -1,10 +1,13 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import boxen from "boxen";
 import chalk from "chalk";
 import { confirm } from "../core/prompt.js";
 
 type ShellName = "zsh" | "bash" | "fish" | "unknown";
+
+const ESC = "\x1b";
 
 function detectShell(): ShellName {
   const shellPath = process.env.SHELL ?? "";
@@ -44,25 +47,125 @@ async function exists(filePath: string): Promise<boolean> {
   }
 }
 
+interface DeepCleanResult {
+  applied: boolean;
+  steps: string[];
+}
+
+/**
+ * Perform a deep terminal reset: scrollback, visible screen, then optional full RIS.
+ * Intended to feel closer to opening a new terminal tab than a simple `clear`.
+ */
+function performDeepTerminalClean(options: {
+  dryRun: boolean;
+  soft: boolean;
+}): DeepCleanResult {
+  const steps: string[] = [];
+
+  if (options.dryRun) {
+    steps.push("iTerm: clear scrollback (if iTerm.app)");
+    steps.push("Erase scrollback buffer (CSI 3 J)");
+    steps.push("Erase display + cursor home (CSI 2 J + CSI H)");
+    if (!options.soft) {
+      steps.push("Full terminal reset — RIS (ESC c), restore modes/fonts/colors");
+    } else {
+      steps.push("(Soft mode: skip RIS — keeps some terminal modes intact)");
+    }
+    return { applied: false, steps };
+  }
+
+  if (!process.stdout.isTTY) {
+    return {
+      applied: false,
+      steps: ["Skipped escape sequences (stdout is not a TTY — open a real terminal window)"],
+    };
+  }
+
+  if (process.env.TERM_PROGRAM === "iTerm.app") {
+    process.stdout.write(`${ESC}]1337;ClearScrollback\x07`);
+    steps.push("iTerm scrollback buffer cleared");
+  }
+
+  process.stdout.write(`${ESC}[3J`);
+  steps.push("Scrollback buffer cleared (CSI 3 J)");
+
+  process.stdout.write(`${ESC}[2J${ESC}[H`);
+  steps.push("Screen erased; cursor at home (CSI 2 J + CSI H)");
+
+  if (!options.soft) {
+    process.stdout.write("\x1bc");
+    steps.push("Full terminal reset (RIS) — like a fresh session");
+  } else {
+    steps.push("Soft mode: RIS skipped (use without --soft for full reset)");
+  }
+
+  return { applied: true, steps };
+}
+
 export async function runTerminalClean(
   dryRun = false,
   yes = false,
   clearHistory = false,
+  soft = false,
 ): Promise<void> {
-  console.log(chalk.bold("Running terminal clean..."));
+  console.log(chalk.bold("Terminal deep clean"));
+
+  const result = performDeepTerminalClean({ dryRun, soft });
 
   if (dryRun) {
     console.log(
-      chalk.dim("Dry-run: would clear terminal screen and scrollback."),
+      boxen(
+        [
+          chalk.yellow.bold("Dry run"),
+          "",
+          ...result.steps.map((s) => chalk.dim(`• ${s}`)),
+        ].join("\n"),
+        {
+          borderStyle: "round",
+          borderColor: "yellow",
+          padding: { left: 1, right: 1, top: 0, bottom: 0 },
+          margin: { top: 0, bottom: 0 },
+        },
+      ),
+    );
+  } else if (result.applied) {
+    console.log(
+      boxen(
+        [
+          chalk.green.bold("Terminal reset"),
+          "",
+          ...result.steps.map((s) => chalk.white(`• ${s}`)),
+          "",
+          chalk.dim(
+            soft ?
+              "Tip: omit --soft for a full hardware-style reset (RIS)."
+            : "Tip: use --soft in tmux/SSH if the display glitches after reset.",
+          ),
+        ].join("\n"),
+        {
+          title: chalk.cyan(" like a new terminal "),
+          titleAlignment: "center",
+          borderStyle: "round",
+          borderColor: "green",
+          padding: { left: 1, right: 1, top: 0, bottom: 0 },
+          margin: { top: 0, bottom: 0 },
+        },
+      ),
     );
   } else {
-    // Reset terminal state and clear viewport + scrollback in most terminals.
-    process.stdout.write("\u001bc");
+    for (const line of result.steps) {
+      console.log(chalk.yellow(line));
+    }
   }
 
-  console.log(chalk.green("Terminal viewport cleaned."));
-
   if (!clearHistory) {
+    if (!dryRun && result.applied) {
+      console.log(
+        chalk.dim(
+          "Shell command history on disk is unchanged. Pass --history to archive and clear it.",
+        ),
+      );
+    }
     return;
   }
 
@@ -79,7 +182,7 @@ export async function runTerminalClean(
   }
 
   const approved = await confirm(
-    `Also clear shell history file (${historyPath})?`,
+    `Also clear on-disk shell history?\n  ${chalk.dim(historyPath)}`,
     yes,
   );
   if (!approved) {
@@ -112,7 +215,7 @@ export async function runTerminalClean(
   console.log(chalk.green(`History cleaned. Backup: ${backupPath}`));
   console.log(
     chalk.dim(
-      "Note: current interactive session history may persist until you restart the shell.",
+      "Current session may still remember commands until you open a new terminal tab.",
     ),
   );
 }
