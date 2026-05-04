@@ -113,18 +113,29 @@ export async function runBrewStep(
   args: string[],
   critical: boolean,
   dryRun: boolean,
+  /** Pipe brew stdout/stderr through to the terminal (download/git progress). */
+  streamOutput = false,
 ): Promise<BrewStepResult> {
   const result = await runCommand(command, args, {
     dryRun,
     allowFailure: true,
+    stdio: streamOutput && !dryRun ? "inherit" : undefined,
   });
 
-  const detail =
-    result.stdout ||
-    result.stderr ||
-    (result.code === 0 ?
-      "Completed successfully (exit code 0, no output)."
-    : "Command failed with no output.");
+  let detail: string;
+  if (streamOutput && !dryRun) {
+    detail =
+      result.code === 0 ?
+        "Finished successfully (see live output above)."
+      : `Failed with exit code ${result.code} (see output above).`;
+  } else {
+    detail =
+      result.stdout ||
+      result.stderr ||
+      (result.code === 0 ?
+        "Completed successfully (exit code 0, no output)."
+      : "Command failed with no output.");
+  }
 
   return {
     name,

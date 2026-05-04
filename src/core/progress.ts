@@ -8,7 +8,9 @@ export class CommandProgress {
     private readonly title: string,
     private readonly totalSteps: number,
   ) {
-    console.log(chalk.bold(`\n${this.title}`));
+    if (title.trim().length > 0) {
+      console.log(chalk.bold(`\n${this.title}`));
+    }
   }
 
   async step<T>(label: string, task: () => Promise<T>): Promise<T> {
@@ -39,6 +41,31 @@ export class CommandProgress {
       console.log(chalk.red(`✖ ${prefix} ${label}`));
       throw error;
     }
+  }
+
+  /**
+   * Like interactiveStep but for tasks that return { status: 'success' | 'failed' }
+   * (e.g. brew) so we show ✔/✖ from the result instead of always succeeding.
+   */
+  async interactiveStepWithStatus<T extends { status: string }>(
+    label: string,
+    task: () => Promise<T>,
+  ): Promise<T> {
+    this.current += 1;
+    const prefix = `[${this.current}/${this.totalSteps}]`;
+    console.log(chalk.bold.cyan(`${prefix} ${label}`));
+
+    const result = await task();
+
+    if (result.status === "failed") {
+      console.log(chalk.red(`  ✖ ${prefix} ${label}`));
+    } else if (result.status === "warn") {
+      console.log(chalk.yellow(`  ⚠ ${prefix} ${label}`));
+    } else {
+      console.log(chalk.green(`  ✔ ${prefix} ${label}`));
+    }
+
+    return result;
   }
 
   tick(label: string): void {

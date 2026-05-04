@@ -1,3 +1,4 @@
+import boxen from "boxen";
 import chalk from "chalk";
 import { CommandProgress } from "../core/progress.js";
 import {
@@ -103,15 +104,40 @@ export async function brewClean(dryRun = false): Promise<void> {
 export async function brewUpgrade(dryRun = false): Promise<void> {
   const outdated = await getOutdatedPackages();
   const totalTargets = outdated.formulae.length + outdated.casks.length;
-  const progress = new CommandProgress(
-    "Brew Upgrade",
-    1 + Math.max(totalTargets, 1),
+  const stepCount = 1 + Math.max(totalTargets, 1);
+
+  console.log(
+    boxen(
+      [
+        chalk.dim(
+          totalTargets > 0 ?
+            `${outdated.formulae.length} outdated formula · ${outdated.casks.length} outdated cask${outdated.casks.length === 1 ? "" : "s"}`
+          : "No outdated formulae or casks",
+        ),
+        "",
+        chalk.gray(
+          "brew update + each upgrade stream live (git fetches, downloads, pours).",
+        ),
+        chalk.dim("Use a wide terminal for progress bars."),
+      ].join("\n"),
+      {
+        title: chalk.bold.white(" Brew upgrade "),
+        titleAlignment: "center",
+        borderStyle: "round",
+        borderColor: "cyan",
+        padding: { left: 1, right: 1, top: 0, bottom: 0 },
+        margin: { top: 0, bottom: 0 },
+      },
+    ),
   );
+
+  const progress = new CommandProgress("", stepCount);
 
   const steps: BrewStepResult[] = [];
 
-  const updateStep = await progress.step("Updating brew formula metadata", () =>
-    runBrewStep("Brew update", "brew", ["update"], true, false),
+  const updateStep = await progress.interactiveStepWithStatus(
+    "brew update — refresh taps & metadata",
+    () => runBrewStep("Brew update", "brew", ["update"], true, false, true),
   );
   steps.push(updateStep);
 
@@ -161,14 +187,17 @@ export async function brewUpgrade(dryRun = false): Promise<void> {
       continue;
     }
 
-    const step = await progress.step(`Upgrading formula ${pkg}`, () =>
-      runBrewStep(
-        `Upgrade formula ${pkg}`,
-        "brew",
-        ["upgrade", pkg],
-        true,
-        false,
-      ),
+    const step = await progress.interactiveStepWithStatus(
+      `brew upgrade ${pkg} (formula)`,
+      () =>
+        runBrewStep(
+          `Upgrade formula ${pkg}`,
+          "brew",
+          ["upgrade", pkg],
+          true,
+          false,
+          true,
+        ),
     );
     steps.push(step);
   }
@@ -186,14 +215,17 @@ export async function brewUpgrade(dryRun = false): Promise<void> {
       continue;
     }
 
-    const step = await progress.step(`Upgrading cask ${cask}`, () =>
-      runBrewStep(
-        `Upgrade cask ${cask}`,
-        "brew",
-        ["upgrade", "--cask", cask],
-        true,
-        false,
-      ),
+    const step = await progress.interactiveStepWithStatus(
+      `brew upgrade --cask ${cask}`,
+      () =>
+        runBrewStep(
+          `Upgrade cask ${cask}`,
+          "brew",
+          ["upgrade", "--cask", cask],
+          true,
+          false,
+          true,
+        ),
     );
     steps.push(step);
   }
