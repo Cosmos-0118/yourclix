@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-import { Command } from "commander";
+import type { Command } from "commander";
 import { ActionableError, formatActionableError } from "./core/actionable-error.js";
+import { YourCommand } from "./core/your-command.js";
 import { registerCommands } from "./commands/index.js";
 import {
   assertRuntimeRequirements,
@@ -8,7 +9,7 @@ import {
   printRuntimeWarnings,
 } from "./managers/feature-runtime-manager.js";
 
-const program = new Command();
+const program = new YourCommand();
 
 program
   .name("your")

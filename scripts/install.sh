@@ -7,6 +7,9 @@ REPO_REF="${YOUR_REPO_REF:-main}"
 TARGET_PACKAGE_NAME="${YOUR_TARGET_PACKAGE_NAME:-@yourclix/your}"
 INSTALL_HOME="${YOUR_INSTALL_HOME:-$HOME/.your}"
 SOURCE_DIR="${YOUR_SOURCE_DIR:-$INSTALL_HOME/source}"
+# User-level global installs without touching ~/.npmrc `prefix` (avoids nvm conflict & zsh init warnings).
+GLOBAL_NPM_PREFIX="${YOUR_GLOBAL_NPM_PREFIX:-$HOME/.npm-global}"
+export GLOBAL_NPM_PREFIX
 
 # ── terminal styling (disabled when not a TTY or NO_COLOR is set) ─────────────
 if [[ -z "${NO_COLOR:-}" ]] && [[ -t 1 ]]; then
@@ -65,28 +68,29 @@ ensure_node() {
 }
 
 ensure_path() {
-  local marker="export PATH=\"$HOME/.npm-global/bin:$PATH\""
   local shell_rc_files=("$HOME/.zprofile" "$HOME/.zshrc")
 
-  mkdir -p "$HOME/.npm-global"
-  npm config set prefix "$HOME/.npm-global" >/dev/null
+  mkdir -p "${GLOBAL_NPM_PREFIX}"
 
   for rc_file in "${shell_rc_files[@]}"; do
     if [[ ! -f "$rc_file" ]]; then
       touch "$rc_file"
     fi
 
-    if ! grep -Fq "$marker" "$rc_file"; then
-      step "Adding npm global bin to PATH (${rc_file})"
-      {
-        echo ""
-        echo "# your CLI — global npm packages"
-        echo "$marker"
-      } >>"$rc_file"
+    # Idempotent: skip if a prior run (old or new installer) already added this PATH entry.
+    if grep -Fq '.npm-global/bin' "$rc_file"; then
+      continue
     fi
+
+    step "Adding user npm global bin to PATH (${rc_file})"
+    cat >>"$rc_file" <<EOF
+
+# your CLI — global npm packages (PATH only; no ~/.npmrc prefix — compatible with nvm)
+export PATH="${GLOBAL_NPM_PREFIX}/bin:\$PATH"
+EOF
   done
 
-  export PATH="$HOME/.npm-global/bin:$PATH"
+  export PATH="${GLOBAL_NPM_PREFIX}/bin:$PATH"
 }
 
 cleanup_legacy_prefix_installs() {
@@ -108,7 +112,7 @@ cleanup_legacy_prefix_installs() {
 
 fix_global_bin_permissions() {
   local global_bin
-  global_bin="$(npm prefix -g)/bin/your"
+  global_bin="${GLOBAL_NPM_PREFIX}/bin/your"
   if [[ -e "$global_bin" ]]; then
     chmod +x "$global_bin" >/dev/null 2>&1 || true
     if [[ -L "$global_bin" ]]; then
@@ -124,7 +128,7 @@ fix_global_bin_permissions() {
 resolve_global_package_path() {
   local package_name="$1"
   local global_root
-  global_root="$(npm prefix -g)/lib/node_modules"
+  global_root="${GLOBAL_NPM_PREFIX}/lib/node_modules"
 
   if [[ "$package_name" == @*/* ]]; then
     local scope
@@ -157,7 +161,7 @@ repair_global_package_conflict() {
 
 try_install_from_registry() {
   # Expected to fail with 404 until the package is published; keep output quiet.
-  if npm install -g "$PACKAGE_NAME" --no-audit --no-fund >/dev/null 2>&1; then
+  if npm install -g --prefix "${GLOBAL_NPM_PREFIX}" "$PACKAGE_NAME" --no-audit --no-fund >/dev/null 2>&1; then
     return 0
   fi
   return 1
@@ -207,7 +211,7 @@ install_from_source() {
 
     local package_tgz
     package_tgz="$(npm pack --silent 2>/dev/null | tail -n 1)"
-    npm install -g "$package_tgz" --no-audit --no-fund
+    npm install -g --prefix "${GLOBAL_NPM_PREFIX}" "$package_tgz" --no-audit --no-fund
     rm -f "$package_tgz"
 
     rm -rf node_modules
@@ -241,21 +245,22 @@ install_completion() {
 }
 
 final_summary() {
-  local global_prefix
   local global_bin
-  global_prefix="$(npm prefix -g)"
-  global_bin="${global_prefix}/bin/your"
+  global_bin="${GLOBAL_NPM_PREFIX}/bin/your"
 
   echo
   rule
   printf '%s\n' "${_b}${_grn}Installation complete${_rst}"
   rule
   msg "Source (updates):     ${SOURCE_DIR}"
-  msg "npm global prefix:     ${global_prefix}"
+  msg "User global prefix:   ${GLOBAL_NPM_PREFIX} (not written to ~/.npmrc — nvm-safe)"
   msg "CLI:                   ${global_bin}"
   echo
   ok "Try: ${_b}your --help${_rst}"
   note "If \`your\` is not found, restart the terminal or run: source ~/.zprofile"
+  if [[ -f "${HOME}/.npmrc" ]] && grep -q '^prefix=' "${HOME}/.npmrc" 2>/dev/null; then
+    note "Still seeing nvm/npm warnings? Remove the old prefix line: ${_b}npm config delete prefix${_rst}"
+  fi
   echo
 }
 
