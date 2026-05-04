@@ -1,12 +1,13 @@
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
+import dns from "node:dns/promises";
 import chalk from "chalk";
-import fg from "fast-glob";
 import { bytesToHuman } from "../core/format.js";
 import { CommandProgress } from "../core/progress.js";
 import { pathSizeFast } from "../core/fs-utils.js";
 import { runCommand } from "../core/exec.js";
+import { getOutdatedPackages } from "./brew-manager.js";
 import type { Issue } from "../core/types.js";
 
 export interface DoctorReport {
@@ -61,30 +62,77 @@ async function loadDoctorConfig(): Promise<DoctorConfig> {
   }
 }
 
-async function countBrokenSymlinks(
-  paths: string[],
-  ignorePatterns: string[],
+async function pathExistsStat(targetPath: string): Promise<boolean> {
+  try {
+    await fs.access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Only dirs where broken symlinks commonly matter — not a whole-home crawl.
+ */
+async function countBrokenSymlinksUnder(
+  dir: string,
+  maxDepth: number,
+  currentDepth = 0,
 ): Promise<number> {
-  let count = 0;
+  if (!(await pathExistsStat(dir))) {
+    return 0;
+  }
 
-  for (const targetPath of paths) {
-    if (ignorePatterns.some((pattern) => targetPath.includes(pattern.replace(/\*\*/g, "")))) {
-      continue;
-    }
+  let broken = 0;
+  let entries;
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
 
+  for (const ent of entries) {
+    const full = path.join(dir, ent.name);
     try {
-      const stat = await fs.lstat(targetPath);
-      if (!stat.isSymbolicLink()) {
-        continue;
+      const st = await fs.lstat(full);
+      if (st.isSymbolicLink()) {
+        try {
+          await fs.stat(full);
+        } catch {
+          broken += 1;
+        }
       }
-
-      await fs.stat(targetPath);
+      if (
+        ent.isDirectory() &&
+        currentDepth < maxDepth
+      ) {
+        broken += await countBrokenSymlinksUnder(
+          full,
+          maxDepth,
+          currentDepth + 1,
+        );
+      }
     } catch {
-      count += 1;
+      continue;
     }
   }
 
-  return count;
+  return broken;
+}
+
+async function countBrokenSymlinksScoped(home: string): Promise<number> {
+  const roots: Array<{ path: string; maxDepth: number }> = [
+    { path: "/opt/homebrew/bin", maxDepth: 0 },
+    { path: "/usr/local/bin", maxDepth: 0 },
+    { path: path.join(home, "bin"), maxDepth: 0 },
+    { path: path.join(home, ".config"), maxDepth: 2 },
+  ];
+
+  let total = 0;
+  for (const { path: root, maxDepth } of roots) {
+    total += await countBrokenSymlinksUnder(root, maxDepth);
+  }
+  return total;
 }
 
 async function getDiskFreePercent(targetPath: string): Promise<number> {
@@ -110,11 +158,14 @@ export async function runDoctorChecks(): Promise<DoctorReport> {
 
   const targets = [
     path.join(home, "Downloads"),
-    path.join(home, "Developer"),
-    path.join(home, "Library/Caches"),
+    path.join(home, "Desktop"),
+    path.join(home, "Documents"),
+    path.join(home, "Library/Containers"),
   ];
 
-  const sizeChecks = await progress.step("Analyzing disk-heavy directories", async () =>
+  const sizeChecks = await progress.step(
+    "Analyzing disk-heavy directories (targeted folders)",
+    async () =>
     Promise.all(
       targets.map(async (target) => ({
         path: target,
@@ -141,13 +192,17 @@ export async function runDoctorChecks(): Promise<DoctorReport> {
 
   const developerCacheTargets = [
     path.join(home, "Library/Developer/Xcode/DerivedData"),
+    path.join(home, "Library/Developer/Xcode/iOS DeviceSupport"),
     path.join(home, "Library/Developer/CoreSimulator"),
-    path.join(home, ".npm"),
+    path.join(home, ".npm/_cacache"),
     path.join(home, ".cache/pnpm"),
+    path.join(home, "Library/Caches/Yarn"),
     path.join(home, "Library/Application Support/Code/Cache"),
     path.join(home, "Library/Application Support/Code/CachedData"),
     path.join(home, "Library/Application Support/Code/User/workspaceStorage"),
-    path.join(home, "Library/Containers/com.docker.docker"),
+    path.join(home, "Library/Containers/com.docker.docker/Data"),
+    path.join(home, ".gradle/caches"),
+    path.join(home, "Library/Caches/Homebrew"),
   ];
 
   const developerCachesRaw = await progress.step(
@@ -177,18 +232,10 @@ export async function runDoctorChecks(): Promise<DoctorReport> {
     });
   }
 
-  const brokenCount = await progress.step("Scanning broken symlinks", async () => {
-    const allPaths = await fg([`${home}/**/*`], {
-      dot: true,
-      followSymbolicLinks: false,
-      onlyFiles: false,
-      suppressErrors: true,
-      deep: config.symlinkScanDepth,
-      ignore: config.ignorePatterns,
-    });
-
-    return countBrokenSymlinks(allPaths, config.ignorePatterns);
-  });
+  const brokenCount = await progress.step(
+    "Scanning broken symlinks (brew bins, ~/.config, ~/bin)",
+    async () => countBrokenSymlinksScoped(home),
+  );
 
   if (brokenCount > 0) {
     issues.push({
@@ -202,20 +249,18 @@ export async function runDoctorChecks(): Promise<DoctorReport> {
     });
   }
 
-  const brewOutdated = await progress.step(
+  const outdatedPkgs = await progress.step(
     "Checking Homebrew package freshness",
-    async () =>
-      runCommand("brew", ["outdated"], {
-        allowFailure: true,
-      }),
+    async () => getOutdatedPackages(),
   );
 
-  if (brewOutdated.stdout.trim()) {
-    const outdatedCount = brewOutdated.stdout.split("\n").filter(Boolean).length;
+  const brewOutdatedCount =
+    outdatedPkgs.formulae.length + outdatedPkgs.casks.length;
+  if (brewOutdatedCount > 0) {
     issues.push({
       id: "brew-outdated",
       title: "Outdated Homebrew packages",
-      description: `${outdatedCount} packages are outdated`,
+      description: `${brewOutdatedCount} outdated (${outdatedPkgs.formulae.length} formulae, ${outdatedPkgs.casks.length} casks)`,
       safeToFix: true,
       command: "your brew optimize",
       recommendedCommand: "your brew optimize",
@@ -237,22 +282,15 @@ export async function runDoctorChecks(): Promise<DoctorReport> {
   }
 
   const networkReachable = await progress.step(
-    "Checking network reachability",
+    "Checking network reachability (DNS)",
     async () => {
-      const checks = ["https://github.com", "https://formulae.brew.sh/api"];
-      for (const url of checks) {
-        const probe = await runCommand(
-          "curl",
-          ["-Is", "--max-time", "6", url],
-          { allowFailure: true },
-        );
-
-        if (probe.code !== 0) {
-          return false;
-        }
+      try {
+        await dns.resolve("apple.com");
+        await dns.resolve("github.com");
+        return true;
+      } catch {
+        return false;
       }
-
-      return true;
     },
   );
 
@@ -260,7 +298,7 @@ export async function runDoctorChecks(): Promise<DoctorReport> {
     issues.push({
       id: "network-reachability",
       title: "Network connectivity appears unstable",
-      description: "Could not confirm access to common developer endpoints",
+      description: "DNS could not resolve apple.com or github.com",
       safeToFix: false,
       command: "your net fix",
       recommendedCommand: "your net fix",
@@ -271,17 +309,13 @@ export async function runDoctorChecks(): Promise<DoctorReport> {
   const gitIdentity = await progress.step(
     "Checking Git identity configuration",
     async () => {
-      const userName = await runCommand("git", ["config", "--global", "user.name"], {
+      const list = await runCommand("git", ["config", "--global", "--list"], {
         allowFailure: true,
       });
-      const userEmail = await runCommand("git", ["config", "--global", "user.email"], {
-        allowFailure: true,
-      });
-
-      return {
-        hasName: userName.code === 0 && Boolean(userName.stdout.trim()),
-        hasEmail: userEmail.code === 0 && Boolean(userEmail.stdout.trim()),
-      };
+      const text = list.stdout;
+      const hasName = /^user\.name\s*=\s*\S/m.test(text);
+      const hasEmail = /^user\.email\s*=\s*\S/m.test(text);
+      return { hasName, hasEmail };
     },
   );
 

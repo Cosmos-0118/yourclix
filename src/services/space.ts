@@ -1,10 +1,19 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import chalk from "chalk";
 import { runCommand } from "../core/exec.js";
 import { bytesToHuman } from "../core/format.js";
 import { pathSizeFast } from "../core/fs-utils.js";
 import { CommandProgress } from "../core/progress.js";
+
+/** Default scan roots — typical hoard locations, not full-disk crawls. */
+const TARGET_DISK_FOLDERS = [
+  "Downloads",
+  "Desktop",
+  "Documents",
+  path.join("Library", "Containers"),
+] as const;
 
 interface SpaceNode {
   name: string;
@@ -31,16 +40,70 @@ export async function analyzeSpace(
   basePath?: string,
   depth = 2,
 ): Promise<void> {
+  if (!basePath) {
+    const home = os.homedir();
+    const progress = new CommandProgress("Disk Space Analyzer", 2);
+
+    console.log(
+      chalk.dim(
+        "Targeted scan: Downloads, Desktop, Documents, Library/Containers — not the whole disk. " +
+          "On APFS, clone/shared blocks can make summed sizes exceed physical disk usage.",
+      ),
+    );
+
+    const root = await progress.step(
+      `Building usage trees (depth ${depth})`,
+      async () => buildSyntheticHomeSummary(home, depth),
+    );
+
+    progress.tick("Rendering visual tree");
+    printTree(root, "");
+    return;
+  }
+
   const progress = new CommandProgress("Disk Space Analyzer", 2);
-  const rootPath = basePath ?? os.homedir();
 
   const root = await progress.step(
-    `Building usage tree for ${rootPath} (depth ${depth})`,
-    async () => buildTree(rootPath, depth),
+    `Building usage tree for ${basePath} (depth ${depth})`,
+    async () => buildTree(basePath, depth),
   );
 
   progress.tick("Rendering visual tree");
   printTree(root, "");
+}
+
+async function buildSyntheticHomeSummary(
+  home: string,
+  depth: number,
+): Promise<SpaceNode> {
+  const children: SpaceNode[] = [];
+
+  for (const rel of TARGET_DISK_FOLDERS) {
+    const fullPath = path.join(home, rel);
+    try {
+      const subtree = await buildTree(fullPath, depth);
+      children.push(subtree);
+    } catch {
+      children.push({
+        name: path.basename(fullPath) || rel,
+        fullPath,
+        bytes: 0,
+        children: [],
+        isDirectory: true,
+      });
+    }
+  }
+
+  children.sort((a, b) => b.bytes - a.bytes);
+  const bytes = children.reduce((sum, child) => sum + child.bytes, 0);
+
+  return {
+    name: "~ (Downloads · Desktop · Documents · Containers)",
+    fullPath: home,
+    bytes,
+    children,
+    isDirectory: true,
+  };
 }
 
 async function buildTree(

@@ -4,8 +4,13 @@ import { analyzeSpace } from "../services/space.js";
 export function registerSpace(program: Command): void {
   program
     .command("space")
-    .description("Visual disk space analyzer")
-    .option("--path <path>", "path to analyze")
+    .description(
+      "Disk usage tree for heavy folders (default) or a path you choose",
+    )
+    .option(
+      "--path <path>",
+      "analyze this path only (default: Downloads, Desktop, Documents, Library/Containers)",
+    )
     .option("--depth <depth>", "tree depth", "2")
     .action(async (options) => {
       await analyzeSpace(options.path, Number.parseInt(options.depth, 10));

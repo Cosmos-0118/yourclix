@@ -16,14 +16,6 @@ interface OutdatedPackages {
   casks: string[];
 }
 
-function parseOutdatedOutput(output: string): string[] {
-  return output
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => line.split(" ")[0]);
-}
-
 function commandLine(command: string, args: string[]): string {
   return `${command} ${args.join(" ")}`.trim();
 }
@@ -146,16 +138,30 @@ export async function runBrewStep(
   };
 }
 
+/** brew outdated JSON v2 — single fast pass, no tap auto-update. */
+interface BrewOutdatedJsonV2 {
+  formulae?: Array<{ name: string }>;
+  casks?: Array<{ name: string }>;
+}
+
 export async function getOutdatedPackages(): Promise<OutdatedPackages> {
-  const outdatedFormulae = await runCommand("brew", ["outdated", "--formula"], {
+  const result = await runCommand("brew", ["outdated", "--json=v2"], {
     allowFailure: true,
-  });
-  const outdatedCasks = await runCommand("brew", ["outdated", "--cask"], {
-    allowFailure: true,
+    env: { HOMEBREW_NO_AUTO_UPDATE: "1" },
   });
 
-  return {
-    formulae: parseOutdatedOutput(outdatedFormulae.stdout),
-    casks: parseOutdatedOutput(outdatedCasks.stdout),
-  };
+  if (result.code !== 0 || !result.stdout.trim()) {
+    return { formulae: [], casks: [] };
+  }
+
+  try {
+    const data = JSON.parse(result.stdout) as BrewOutdatedJsonV2;
+    const formulae = (data.formulae ?? [])
+      .map((f) => f.name)
+      .filter(Boolean);
+    const casks = (data.casks ?? []).map((c) => c.name).filter(Boolean);
+    return { formulae, casks };
+  } catch {
+    return { formulae: [], casks: [] };
+  }
 }

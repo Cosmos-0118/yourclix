@@ -31,7 +31,7 @@ export async function runCommand(
     const useInheritedStdio = options.stdio === "inherit";
     const child = spawn(command, args, {
       cwd: options.cwd,
-      env: options.env,
+      env: { ...process.env, ...(options.env ?? {}) },
       stdio:
         useInheritedStdio ?
           ["inherit", "inherit", "inherit"]
