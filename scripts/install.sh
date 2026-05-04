@@ -8,17 +8,41 @@ TARGET_PACKAGE_NAME="${YOUR_TARGET_PACKAGE_NAME:-@yourclix/your}"
 INSTALL_HOME="${YOUR_INSTALL_HOME:-$HOME/.your}"
 SOURCE_DIR="${YOUR_SOURCE_DIR:-$INSTALL_HOME/source}"
 
-print_step() {
-  echo "[your-install] $1"
+# ── terminal styling (disabled when not a TTY or NO_COLOR is set) ─────────────
+if [[ -z "${NO_COLOR:-}" ]] && [[ -t 1 ]]; then
+  _b=$'\033[1m'
+  _dim=$'\033[2m'
+  _grn=$'\033[32m'
+  _cyn=$'\033[36m'
+  _ylw=$'\033[33m'
+  _red=$'\033[31m'
+  _rst=$'\033[0m'
+else
+  _b="" _dim="" _grn="" _cyn="" _ylw="" _red="" _rst=""
+fi
+
+rule() { printf '%s\n' "${_dim}────────────────────────────────────────────────────────${_rst}"; }
+
+banner() {
+  rule
+  printf '%s\n' "${_b}${_cyn}  your${_rst} ${_dim}— macOS optimizer CLI${_rst}"
+  rule
+  echo
 }
+
+msg() { printf '%s %s\n' "${_dim}•${_rst}" "$*"; }
+step() { printf '%s\n' "${_cyn}▸${_rst} $*"; }
+ok() { printf '%s %s\n' "${_grn}✓${_rst}" "$*"; }
+warn() { printf '%s %s\n' "${_ylw}!${_rst}" "$*" >&2; }
+note() { printf '%s\n' "${_dim}$*${_rst}"; }
 
 ensure_homebrew() {
   if command -v brew >/dev/null 2>&1; then
-    print_step "Homebrew already installed"
+    ok "Homebrew present"
     return
   fi
 
-  print_step "Installing Homebrew"
+  step "Installing Homebrew"
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
   if [[ -x /opt/homebrew/bin/brew ]]; then
@@ -26,16 +50,18 @@ ensure_homebrew() {
   elif [[ -x /usr/local/bin/brew ]]; then
     eval "$(/usr/local/bin/brew shellenv)"
   fi
+  ok "Homebrew installed"
 }
 
 ensure_node() {
   if command -v node >/dev/null 2>&1; then
-    print_step "Node.js already installed"
+    ok "Node.js $(node -p process.version 2>/dev/null || echo '') present"
     return
   fi
 
-  print_step "Installing Node.js via Homebrew"
+  step "Installing Node.js (Homebrew)"
   brew install node
+  ok "Node.js installed"
 }
 
 ensure_path() {
@@ -51,10 +77,10 @@ ensure_path() {
     fi
 
     if ! grep -Fq "$marker" "$rc_file"; then
-      print_step "Updating PATH in $rc_file"
+      step "Adding npm global bin to PATH (${rc_file})"
       {
         echo ""
-        echo "# your CLI global npm path"
+        echo "# your CLI — global npm packages"
         echo "$marker"
       } >>"$rc_file"
     fi
@@ -72,11 +98,9 @@ cleanup_legacy_prefix_installs() {
     local legacy_bin="${prefix}/bin/your"
     local legacy_pkg="${prefix}/lib/node_modules/${scoped_dir}/${package_dir}"
     if [[ -e "$legacy_bin" || -e "$legacy_pkg" ]]; then
-      print_step "Removing legacy install from ${prefix}"
+      step "Removing legacy install under ${prefix}"
       rm -f "$legacy_bin" >/dev/null 2>&1 || true
       rm -rf "$legacy_pkg" >/dev/null 2>&1 || true
-
-      # Remove now-empty scope directory if present.
       rmdir "${prefix}/lib/node_modules/${scoped_dir}" >/dev/null 2>&1 || true
     fi
   done
@@ -120,104 +144,133 @@ repair_global_package_conflict() {
   install_path="$(resolve_global_package_path "$package_name")"
 
   if [[ -L "$install_path" ]]; then
-    print_step "Removing conflicting symlink install at ${install_path}"
+    step "Removing conflicting symlink at ${install_path}"
     rm -f "$install_path"
     return
   fi
 
   if [[ -e "$install_path" && ! -d "$install_path" ]]; then
-    print_step "Removing invalid install artifact at ${install_path}"
+    step "Removing invalid artifact at ${install_path}"
     rm -f "$install_path"
   fi
 }
 
+try_install_from_registry() {
+  # Expected to fail with 404 until the package is published; keep output quiet.
+  if npm install -g "$PACKAGE_NAME" --no-audit --no-fund >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
+sync_git_source() {
+  local git_source="${REPO_URL}.git"
+  mkdir -p "$INSTALL_HOME"
+
+  if [[ -d "$SOURCE_DIR/.git" ]]; then
+    step "Updating source tree (${SOURCE_DIR})"
+    if ! (
+      set -e
+      cd "$SOURCE_DIR"
+      git remote set-url origin "$git_source" 2>/dev/null || git remote add origin "$git_source"
+      git fetch --depth 1 origin "$REPO_REF"
+      git checkout -B "$REPO_REF" "origin/${REPO_REF}"
+      git reset --hard "origin/${REPO_REF}"
+    ); then
+      warn "Could not fast-sync repo (resetting to fresh clone)"
+      rm -rf "$SOURCE_DIR"
+      git clone --depth 1 --branch "$REPO_REF" "$git_source" "$SOURCE_DIR"
+    fi
+    ok "Source at ${REPO_REF}"
+  else
+    step "Cloning ${REPO_URL} (${REPO_REF})"
+    rm -rf "$SOURCE_DIR"
+    git clone --depth 1 --branch "$REPO_REF" "$git_source" "$SOURCE_DIR"
+    ok "Repository cloned"
+  fi
+}
+
+install_from_source() {
+  local git_source="${REPO_URL}.git"
+
+  repair_global_package_conflict "$TARGET_PACKAGE_NAME"
+  note "The npm package is not published yet — building from Git source."
+
+  sync_git_source
+
+  step "Installing dependencies and building (TypeScript compile runs via npm prepare)"
+  (
+    set -e
+    cd "$SOURCE_DIR"
+    npm install --no-audit --no-fund
+    # prepare → npm run build produces dist/ for npm pack
+
+    local package_tgz
+    package_tgz="$(npm pack --silent 2>/dev/null | tail -n 1)"
+    npm install -g "$package_tgz" --no-audit --no-fund
+    rm -f "$package_tgz"
+
+    rm -rf node_modules
+  )
+  ok "CLI installed from source"
+}
+
 install_cli() {
-  print_step "Installing ${PACKAGE_NAME} globally"
-  if npm install -g "$PACKAGE_NAME"; then
+  step "Installing CLI (${PACKAGE_NAME})"
+  if try_install_from_registry; then
+    ok "Installed from npm registry"
     fix_global_bin_permissions
     return
   fi
 
-  local git_source
-  git_source="${REPO_URL}.git"
-
-  repair_global_package_conflict "$TARGET_PACKAGE_NAME"
-  print_step "npm package not available; installing from repository source"
-  mkdir -p "$INSTALL_HOME"
-
-  if [[ -d "$SOURCE_DIR/.git" ]]; then
-    print_step "Updating local source at ${SOURCE_DIR}"
-    if ! (
-      cd "$SOURCE_DIR"
-      git fetch --depth 1 origin "$REPO_REF"
-      git checkout "$REPO_REF"
-      git pull --ff-only origin "$REPO_REF"
-    ); then
-      print_step "Local source update failed; re-cloning fresh copy"
-      rm -rf "$SOURCE_DIR"
-      git clone --depth 1 --branch "$REPO_REF" "$git_source" "$SOURCE_DIR"
-    fi
-  else
-    print_step "Cloning ${git_source} (${REPO_REF}) to ${SOURCE_DIR}"
-    rm -rf "$SOURCE_DIR"
-    git clone --depth 1 --branch "$REPO_REF" "$git_source" "$SOURCE_DIR"
-  fi
-
-  print_step "Building CLI from source"
-  (
-    cd "$SOURCE_DIR"
-    npm install
-    npm run build
-
-    local package_tgz
-    package_tgz="$(npm pack --silent | tail -n 1)"
-    npm install -g "$package_tgz"
-    rm -f "$package_tgz"
-
-    # Keep source tree lightweight; next install/update will restore deps when needed.
-    rm -rf node_modules
-  )
-
+  install_from_source
   fix_global_bin_permissions
 }
 
 install_completion() {
-  print_step "Installing zsh autocomplete"
+  step "Zsh completion"
   if command -v your >/dev/null 2>&1; then
     if your completion install --force >/dev/null 2>&1; then
-      print_step "Autocomplete installed"
+      ok "Completion installed"
     else
-      print_step "Autocomplete install skipped (run: your completion install --force)"
+      note "Run later: your completion install --force"
     fi
   else
-    print_step "Autocomplete install skipped because 'your' is not yet on PATH"
+    warn "'your' not on PATH yet — open a new terminal or: source ~/.zprofile"
   fi
 }
 
-final_message() {
+final_summary() {
   local global_prefix
   local global_bin
   global_prefix="$(npm prefix -g)"
   global_bin="${global_prefix}/bin/your"
 
-  print_step "Installation complete"
-  echo "Stored source: ${SOURCE_DIR}"
-  echo "Global prefix: ${global_prefix}"
-  echo "CLI binary: ${global_bin}"
-  echo "Run: your --help"
-  echo "If command is not found, restart terminal or run: source ~/.zprofile"
+  echo
+  rule
+  printf '%s\n' "${_b}${_grn}Installation complete${_rst}"
+  rule
+  msg "Source (updates):     ${SOURCE_DIR}"
+  msg "npm global prefix:     ${global_prefix}"
+  msg "CLI:                   ${global_bin}"
+  echo
+  ok "Try: ${_b}your --help${_rst}"
+  note "If \`your\` is not found, restart the terminal or run: source ~/.zprofile"
+  echo
 }
 
 main() {
-  print_step "Starting install for your CLI"
-  print_step "Source repository: ${REPO_URL}"
+  banner
+  msg "Repository: ${REPO_URL}"
+  echo
+
   ensure_homebrew
   ensure_node
   ensure_path
   cleanup_legacy_prefix_installs
   install_cli
   install_completion
-  final_message
+  final_summary
 }
 
 main "$@"
