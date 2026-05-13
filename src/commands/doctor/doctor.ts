@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { printDoctorReport, runDoctor } from "../services/doctor.js";
+import { printDoctorReport, runDoctor } from "../../services/doctor/doctor.js";
 
 export function registerDoctor(program: Command): void {
   program

@@ -1,6 +1,6 @@
 import { Command } from "commander";
-import { netFix, netReset } from "../services/network.js";
-import { withGlobalOptions } from "./helpers.js";
+import { netFix, netReset } from "../../services/network/index.js";
+import { withGlobalOptions } from "../helpers.js";
 
 export function registerNet(program: Command): void {
   const net = program

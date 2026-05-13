@@ -2,8 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import chalk from "chalk";
-import { runCommand } from "../core/exec.js";
-import { CommandProgress } from "../core/progress.js";
+import { runCommand } from "../../core/exec.js";
+import { CommandProgress } from "../../core/progress.js";
 
 interface PluginManifest {
   installed: string[];

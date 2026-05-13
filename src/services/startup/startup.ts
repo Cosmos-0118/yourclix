@@ -1,10 +1,10 @@
 import chalk from "chalk";
-import { ActionableError } from "../core/actionable-error.js";
-import { runCommand } from "../core/exec.js";
-import { buildManualRecoveryDetails } from "../core/reconfigure.js";
-import { printNextCommands } from "../core/next-steps.js";
-import { CommandProgress } from "../core/progress.js";
-import { hasNamedEntry } from "../core/verification.js";
+import { ActionableError } from "../../core/actionable-error.js";
+import { runCommand } from "../../core/exec.js";
+import { buildManualRecoveryDetails } from "../../core/reconfigure.js";
+import { printNextCommands } from "../../core/next-steps.js";
+import { CommandProgress } from "../../core/progress.js";
+import { hasNamedEntry } from "../../core/verification.js";
 
 interface StartupItem {
   name: string;

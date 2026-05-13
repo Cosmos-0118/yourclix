@@ -2,9 +2,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import chalk from "chalk";
-import { bytesToHuman, pad } from "../core/format.js";
-import { pathSizeFast, removePath } from "../core/fs-utils.js";
-import { confirm } from "../core/prompt.js";
+import { bytesToHuman, pad } from "../../core/format.js";
+import { pathSizeFast, removePath } from "../../core/fs-utils.js";
+import { confirm } from "../../core/prompt.js";
 
 const BACKUP_ROOT = path.join(os.homedir(), ".your-backups");
 

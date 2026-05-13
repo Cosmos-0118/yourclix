@@ -4,10 +4,10 @@ import {
   printCleanerResults,
   runCleanerSelfCheck,
   scanCleanerTargets,
-} from "../services/cleaner.js";
-import { withGlobalOptions } from "./helpers.js";
-import type { RunLevel } from "../core/types.js";
-import { resolveRetentionDays } from "../services/clean-heuristics.js";
+} from "../../services/clean/cleaner.js";
+import { withGlobalOptions } from "../helpers.js";
+import type { RunLevel } from "../../core/types.js";
+import { resolveRetentionDays } from "../../services/clean/clean-heuristics.js";
 
 export function registerClean(program: Command): void {
   withGlobalOptions(

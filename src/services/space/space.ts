@@ -2,10 +2,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import chalk from "chalk";
-import { runCommand } from "../core/exec.js";
-import { bytesToHuman } from "../core/format.js";
-import { pathSizeFast } from "../core/fs-utils.js";
-import { CommandProgress } from "../core/progress.js";
+import { runCommand } from "../../core/exec.js";
+import { bytesToHuman } from "../../core/format.js";
+import { pathSizeFast } from "../../core/fs-utils.js";
+import { CommandProgress } from "../../core/progress.js";
 
 /** Default scan roots — typical hoard locations, not full-disk crawls. */
 const TARGET_DISK_FOLDERS = [

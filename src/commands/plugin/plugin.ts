@@ -4,8 +4,8 @@ import {
   listPlugins,
   removePlugin,
   searchPlugins,
-} from "../services/plugin.js";
-import { withGlobalOptions } from "./helpers.js";
+} from "../../services/plugin/plugin.js";
+import { withGlobalOptions } from "../helpers.js";
 
 export function registerPlugin(program: Command): void {
   const plugin = program.command("plugin").description("Plugin management");

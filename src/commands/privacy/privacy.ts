@@ -1,6 +1,6 @@
 import { Command } from "commander";
-import { privacyClean } from "../services/privacy.js";
-import { withGlobalOptions } from "./helpers.js";
+import { privacyClean } from "../../services/privacy/privacy.js";
+import { withGlobalOptions } from "../helpers.js";
 
 export function registerPrivacy(program: Command): void {
   const privacy = program

@@ -1,11 +1,11 @@
 import os from "node:os";
 import path from "node:path";
 import chalk from "chalk";
-import { ActionableError } from "../core/actionable-error.js";
-import { runCommand } from "../core/exec.js";
-import { CommandProgress } from "../core/progress.js";
-import { confirm } from "../core/prompt.js";
-import { removePath } from "../core/fs-utils.js";
+import { ActionableError } from "../../core/actionable-error.js";
+import { runCommand } from "../../core/exec.js";
+import { CommandProgress } from "../../core/progress.js";
+import { confirm } from "../../core/prompt.js";
+import { removePath } from "../../core/fs-utils.js";
 
 const BASE_PRIVACY_TARGETS = [
   "~/Library/Application Support/com.apple.sharedfilelist",

@@ -4,15 +4,15 @@ import path from "node:path";
 import boxen from "boxen";
 import chalk from "chalk";
 import ora from "ora";
-import { runCommand, type ExecResult } from "../core/exec.js";
-import { confirm } from "../core/prompt.js";
+import { runCommand, type ExecResult } from "../../core/exec.js";
+import { confirm } from "../../core/prompt.js";
 import {
   analyzeBrewCaveats,
   formatBrewCaveatFollowUps,
   hasBrewCaveats,
   printBrewCaveatGuidance,
-} from "../managers/brew-caveats-manager.js";
-import { ensureManagedPath } from "../managers/path-manager.js";
+} from "../../managers/brew-caveats-manager.js";
+import { ensureManagedPath } from "../../managers/path-manager.js";
 
 type SetupProfile = "minimal" | "webdev" | "full";
 type AppsMode = "none" | "minimal" | "webdev" | "full";

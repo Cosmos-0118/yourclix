@@ -1,6 +1,6 @@
 import { Command } from "commander";
-import { runTerminalClean } from "../services/terminal.js";
-import { withGlobalOptions } from "./helpers.js";
+import { runTerminalClean } from "../../services/terminal/terminal.js";
+import { withGlobalOptions } from "../helpers.js";
 
 const EXAMPLES = `
 Examples:

@@ -1,6 +1,10 @@
 import { Command } from "commander";
-import { disableStartupItem, enableStartupItem, listStartupItems } from "../services/startup.js";
-import { withGlobalOptions } from "./helpers.js";
+import {
+  disableStartupItem,
+  enableStartupItem,
+  listStartupItems,
+} from "../../services/startup/startup.js";
+import { withGlobalOptions } from "../helpers.js";
 
 export function registerStartup(program: Command): void {
   const startup = program

@@ -1,7 +1,7 @@
 import chalk from "chalk";
-import { undoManager } from "../core/undo-manager.js";
-import { bytesToHuman, pad } from "../core/format.js";
-import type { UndoOptions } from "../core/types.js";
+import { undoManager } from "../../core/undo-manager.js";
+import { bytesToHuman, pad } from "../../core/format.js";
+import type { UndoOptions } from "../../core/types.js";
 
 /**
  * Undo service: Handles restoration of backed-up files

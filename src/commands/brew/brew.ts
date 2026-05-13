@@ -4,8 +4,8 @@ import {
   brewDoctor,
   brewOptimize,
   brewUpgrade,
-} from "../services/brew.js";
-import { withGlobalOptions } from "./helpers.js";
+} from "../../services/brew/brew.js";
+import { withGlobalOptions } from "../helpers.js";
 
 export function registerBrew(program: Command): void {
   const brew = program.command("brew").description("Homebrew manager");

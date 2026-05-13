@@ -1,6 +1,6 @@
 import { Command } from "commander";
-import { spotlightReset, spotlightStatus } from "../services/spotlight.js";
-import { withGlobalOptions } from "./helpers.js";
+import { spotlightReset, spotlightStatus } from "../../services/spotlight/spotlight.js";
+import { withGlobalOptions } from "../helpers.js";
 
 export function registerSpotlight(program: Command): void {
   const spotlight = program

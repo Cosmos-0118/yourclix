@@ -1,20 +1,20 @@
 import { Command } from "commander";
-import { registerSetup } from "./setup.js";
-import { registerClean } from "./clean.js";
-import { registerNet } from "./net.js";
-import { registerSpotlight } from "./spotlight.js";
-import { registerBrew } from "./brew.js";
-import { registerDoctor } from "./doctor.js";
-import { registerFix } from "./fix.js";
-import { registerDev } from "./dev.js";
-import { registerSpace } from "./space.js";
-import { registerPrivacy } from "./privacy.js";
-import { registerStartup } from "./startup.js";
-import { registerPlugin } from "./plugin.js";
-import { registerCompletion } from "./completion.js";
-import { registerTerminal } from "./terminal.js";
-import { registerBackup } from "./backup.js";
-import { registerUndo } from "./undo.js";
+import { registerSetup } from "./setup/setup.js";
+import { registerClean } from "./clean/clean.js";
+import { registerNet } from "./net/net.js";
+import { registerSpotlight } from "./spotlight/spotlight.js";
+import { registerBrew } from "./brew/brew.js";
+import { registerDoctor } from "./doctor/doctor.js";
+import { registerFix } from "./fix/fix.js";
+import { registerDev } from "./dev/dev.js";
+import { registerSpace } from "./space/space.js";
+import { registerPrivacy } from "./privacy/privacy.js";
+import { registerStartup } from "./startup/startup.js";
+import { registerPlugin } from "./plugin/plugin.js";
+import { registerCompletion } from "./completion/completion.js";
+import { registerTerminal } from "./terminal/terminal.js";
+import { registerBackup } from "./backup/backup.js";
+import { registerUndo } from "./undo/undo.js";
 
 export function registerCommands(program: Command): void {
   registerSetup(program);

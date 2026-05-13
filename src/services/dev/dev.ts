@@ -4,21 +4,21 @@ import fs from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import { fileURLToPath } from "node:url";
 import chalk from "chalk";
-import { ActionableError } from "../core/actionable-error.js";
-import { runCommand } from "../core/exec.js";
-import { buildManualRecoveryDetails } from "../core/reconfigure.js";
-import { printNextCommands } from "../core/next-steps.js";
-import { CommandProgress } from "../core/progress.js";
-import { firstCommandOutput } from "../core/verification.js";
-import { bytesToHuman } from "../core/format.js";
-import { pathSizeFast, removePath } from "../core/fs-utils.js";
-import { confirm } from "../core/prompt.js";
+import { ActionableError } from "../../core/actionable-error.js";
+import { runCommand } from "../../core/exec.js";
+import { buildManualRecoveryDetails } from "../../core/reconfigure.js";
+import { printNextCommands } from "../../core/next-steps.js";
+import { CommandProgress } from "../../core/progress.js";
+import { firstCommandOutput } from "../../core/verification.js";
+import { bytesToHuman } from "../../core/format.js";
+import { pathSizeFast, removePath } from "../../core/fs-utils.js";
+import { confirm } from "../../core/prompt.js";
 import {
   analyzeBrewCaveats,
   formatBrewCaveatFollowUps,
   hasBrewCaveats,
   printBrewCaveatGuidance,
-} from "../managers/brew-caveats-manager.js";
+} from "../../managers/brew-caveats-manager.js";
 
 interface CleanupTargetInfo {
   path: string;

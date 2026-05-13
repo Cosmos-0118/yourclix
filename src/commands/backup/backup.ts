@@ -1,6 +1,6 @@
 import { Command } from "commander";
-import { listBackups, pruneBackups, removeBackup } from "../services/backup.js";
-import { withGlobalOptions } from "./helpers.js";
+import { listBackups, pruneBackups, removeBackup } from "../../services/backup/backup.js";
+import { withGlobalOptions } from "../helpers.js";
 
 export function registerBackup(program: Command): void {
   const backup = program.command("backup").description("Backup manager");

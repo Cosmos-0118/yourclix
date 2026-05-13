@@ -1,6 +1,6 @@
 import boxen from "boxen";
 import chalk from "chalk";
-import { CommandProgress } from "../core/progress.js";
+import { CommandProgress } from "../../core/progress.js";
 import {
   getOutdatedPackages,
   hasCriticalBrewFailure,
@@ -9,7 +9,7 @@ import {
   printCleanupResult,
   runBrewStep,
   type BrewStepResult,
-} from "../managers/brew-manager.js";
+} from "../../managers/brew-manager.js";
 
 function isWarningOnlyDoctorOutput(step: BrewStepResult): boolean {
   if (step.status !== "failed") {

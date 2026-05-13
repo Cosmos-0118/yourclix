@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { analyzeSpace } from "../services/space.js";
+import { analyzeSpace } from "../../services/space/space.js";
 
 export function registerSpace(program: Command): void {
   program

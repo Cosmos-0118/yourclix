@@ -1,7 +1,7 @@
 import chalk from "chalk";
 import { CommandProgress } from "../../core/progress.js";
 import { confirm } from "../../core/prompt.js";
-import { printDoctorReport, runDoctor } from "../doctor.js";
+import { printDoctorReport, runDoctor } from "../doctor/doctor.js";
 import { findBrokenSymlinks, removeBrokenSymlinks } from "./broken-symlinks.js";
 import { runBrewMaintenance } from "./brew.js";
 import type { Issue } from "../../core/types.js";

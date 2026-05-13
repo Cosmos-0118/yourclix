@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { executeUndo } from "../services/undo.js";
+import { executeUndo } from "../../services/undo/undo.js";
 
 export function registerUndo(program: Command): void {
   program

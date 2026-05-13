@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import boxen from "boxen";
 import chalk from "chalk";
-import { confirm } from "../core/prompt.js";
+import { confirm } from "../../core/prompt.js";
 
 type ShellName = "zsh" | "bash" | "fish" | "unknown";
 

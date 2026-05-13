@@ -1,6 +1,6 @@
 import { Command } from "commander";
-import { devClean, devReset } from "../services/dev.js";
-import { withGlobalOptions } from "./helpers.js";
+import { devClean, devReset } from "../../services/dev/dev.js";
+import { withGlobalOptions } from "../helpers.js";
 
 export function registerDev(program: Command): void {
   const dev = program.command("dev").description("Developer environment tools");

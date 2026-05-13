@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { runSetup } from "../services/setup.js";
+import { runSetup } from "../../services/setup/setup.js";
 
 export function registerSetup(program: Command): void {
   program

@@ -1,6 +1,6 @@
 import { Command } from "commander";
-import { runAutoFix } from "../services/fix/index.js";
-import { withGlobalOptions } from "./helpers.js";
+import { runAutoFix } from "../../services/fix/index.js";
+import { withGlobalOptions } from "../helpers.js";
 
 export function registerFix(program: Command): void {
   withGlobalOptions(

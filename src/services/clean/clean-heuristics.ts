@@ -1,12 +1,12 @@
-import type { RunLevel } from "../core/types.js";
-import { askNumber } from "../core/prompt.js";
+import type { RunLevel } from "../../core/types.js";
+import { askNumber } from "../../core/prompt.js";
 import {
   buildCleanerHeuristicPolicy,
   getDefaultRetentionDays,
   isProtectedCleanupPath,
   normalizeRetentionDays,
   type CleanerHeuristicPolicy,
-} from "../managers/clean-heuristics-manager.js";
+} from "../../managers/clean-heuristics-manager.js";
 
 export interface HeuristicSkipRecord {
   path: string;

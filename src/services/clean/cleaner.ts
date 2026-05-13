@@ -4,24 +4,24 @@ import path from "node:path";
 import chalk from "chalk";
 import boxen from "boxen";
 import fg from "fast-glob";
-import { bytesToHuman, pad } from "../core/format.js";
-import { CommandProgress } from "../core/progress.js";
+import { bytesToHuman, pad } from "../../core/format.js";
+import { CommandProgress } from "../../core/progress.js";
 import {
   filterToAncestorRoots,
   pathSizeFast,
   removePath,
   sumPathSizesFast,
-} from "../core/fs-utils.js";
-import { getCleanerScanCategories } from "../managers/clean-scan-manager.js";
-import { confirm } from "../core/prompt.js";
-import type { CleanerOptions, ScanResult } from "../core/types.js";
+} from "../../core/fs-utils.js";
+import { getCleanerScanCategories } from "../../managers/clean-scan-manager.js";
+import { confirm } from "../../core/prompt.js";
+import type { CleanerOptions, ScanResult } from "../../core/types.js";
 import {
   applyCleanerHeuristics,
   getCleanerHeuristicPolicy,
   type HeuristicSkipRecord,
   type ValidatedDeletionCandidate,
 } from "./clean-heuristics.js";
-import { undoManager } from "../core/undo-manager.js";
+import { undoManager } from "../../core/undo-manager.js";
 
 interface DeletionCandidate {
   path: string;

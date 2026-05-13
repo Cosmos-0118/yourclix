@@ -3,7 +3,7 @@ import {
   installZshCompletion,
   printZshCompletionScript,
   uninstallZshCompletion,
-} from "../services/completion.js";
+} from "../../services/completion/completion.js";
 
 export function registerCompletion(program: Command): void {
   const completion = program

@@ -1,9 +1,9 @@
 import chalk from "chalk";
-import { ActionableError } from "../core/actionable-error.js";
-import { printNextCommands } from "../core/next-steps.js";
-import { runCommand } from "../core/exec.js";
-import { CommandProgress } from "../core/progress.js";
-import { buildManualRecoveryDetails } from "../core/reconfigure.js";
+import { ActionableError } from "../../core/actionable-error.js";
+import { printNextCommands } from "../../core/next-steps.js";
+import { runCommand } from "../../core/exec.js";
+import { CommandProgress } from "../../core/progress.js";
+import { buildManualRecoveryDetails } from "../../core/reconfigure.js";
 
 type SpotlightStepStatus = "success" | "failed" | "skipped";
 
