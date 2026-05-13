@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import { createHash } from "node:crypto";
 import chalk from "chalk";
 import { pathSizeFast } from "./fs-utils.js";
 
@@ -44,6 +45,46 @@ export interface CreateBackupResult {
 const BACKUPS_DIR = path.join(os.homedir(), ".your-backups");
 const REGISTRY_FILE = path.join(BACKUPS_DIR, ".registry.json");
 const DEFAULT_RETENTION_DAYS = 30;
+const OUTSIDE_HOME_MANIFEST = ".outside-home.json";
+
+function isUnderHome(resolvedPath: string, homeDir: string): boolean {
+  const candidate = path.resolve(resolvedPath);
+  const root = path.resolve(homeDir);
+  return candidate === root || candidate.startsWith(`${root}${path.sep}`);
+}
+
+function outsideHomeBackupId(absPath: string): string {
+  return createHash("sha256").update(path.resolve(absPath)).digest("hex");
+}
+
+/** Every backup path stays under `backupDir` (never `path.join(backupDir, "../var/…")`). */
+function resolveBackupDestination(
+  backupDir: string,
+  homeDir: string,
+  filePath: string,
+): { backupPath: string; manifestKey: string | null } {
+  const homeResolved = path.resolve(homeDir);
+  const resolved = path.resolve(filePath);
+  const relToHome = path.relative(homeResolved, resolved);
+  const inHome = isUnderHome(resolved, homeDir);
+  const badRel =
+    !relToHome ||
+    relToHome.startsWith("..") ||
+    path.isAbsolute(relToHome);
+
+  if (!inHome || badRel) {
+    const key = outsideHomeBackupId(resolved);
+    return {
+      backupPath: path.join(backupDir, "_abs", key),
+      manifestKey: key,
+    };
+  }
+
+  return {
+    backupPath: path.join(backupDir, relToHome),
+    manifestKey: null,
+  };
+}
 
 class UndoManager {
   private initialized: boolean = false;
@@ -88,29 +129,40 @@ class UndoManager {
 
       let totalBytes = 0;
       let successCount = 0;
+      const homeDir = os.homedir();
+      const outsideManifest: Record<string, string> = {};
 
       for (const filePath of filesToBackup) {
         try {
           await fs.lstat(filePath);
           const itemBytes = await pathSizeFast(filePath);
-          totalBytes += itemBytes;
+          const resolved = path.resolve(filePath);
+          const { backupPath, manifestKey } = resolveBackupDestination(
+            backupDir,
+            homeDir,
+            filePath,
+          );
 
-          // Create relative path structure in backup
-          const homeDir = os.homedir();
-          const relativePath = path.relative(homeDir, filePath);
-          const backupPath = path.join(backupDir, relativePath);
-
-          // Create parent directories
           await fs.mkdir(path.dirname(backupPath), { recursive: true });
-
-          // Move file to backup
           await fs.rename(filePath, backupPath);
           successCount += 1;
+          totalBytes += itemBytes;
+          if (manifestKey) {
+            outsideManifest[manifestKey] = resolved;
+          }
         } catch (error) {
           const msg =
             error instanceof Error ? error.message : String(error);
           warnings.push(`Could not back up ${filePath}: ${msg}`);
         }
+      }
+
+      if (Object.keys(outsideManifest).length > 0) {
+        await fs.writeFile(
+          path.join(backupDir, OUTSIDE_HOME_MANIFEST),
+          JSON.stringify(outsideManifest, null, 2),
+          "utf-8",
+        );
       }
 
       const metadata: BackupMetadata = {
@@ -148,30 +200,57 @@ class UndoManager {
 
       let restoredCount = 0;
       const homeDir = os.homedir();
+      const manifestPath = path.join(backupDir, OUTSIDE_HOME_MANIFEST);
 
-      // Recursively restore all files
-      const restoreRecursive = async (currentDir: string) => {
+      try {
+        const raw = await fs.readFile(manifestPath, "utf-8");
+        const manifest = JSON.parse(raw) as Record<string, string>;
+        for (const [id, originalAbs] of Object.entries(manifest)) {
+          const from = path.join(backupDir, "_abs", id);
+          try {
+            await fs.lstat(from);
+            await fs.mkdir(path.dirname(originalAbs), { recursive: true });
+            await fs.rename(from, originalAbs);
+            restoredCount += 1;
+          } catch (error) {
+            console.error(
+              chalk.red(
+                `Could not restore outside-home backup ${id} to ${originalAbs}: ${error}`,
+              ),
+            );
+          }
+        }
+      } catch {
+        // No manifest (older backups or home-only snapshots)
+      }
+
+      const restoreHomeMirror = async (currentDir: string) => {
         const entries = await fs.readdir(currentDir, { withFileTypes: true });
 
         for (const entry of entries) {
           const fullPath = path.join(currentDir, entry.name);
           const relativePath = path.relative(backupDir, fullPath);
-          const targetPath = path.join(homeDir, relativePath);
+
+          if (
+            relativePath === OUTSIDE_HOME_MANIFEST ||
+            relativePath === "_abs" ||
+            relativePath.startsWith(`_abs${path.sep}`)
+          ) {
+            continue;
+          }
 
           if (entry.isDirectory()) {
-            await restoreRecursive(fullPath);
+            await restoreHomeMirror(fullPath);
           } else {
-            // Ensure parent directory exists
+            const targetPath = path.join(homeDir, relativePath);
             await fs.mkdir(path.dirname(targetPath), { recursive: true });
-
-            // Move back to original location (overwrite if exists)
             await fs.rename(fullPath, targetPath);
             restoredCount += 1;
           }
         }
       };
 
-      await restoreRecursive(backupDir);
+      await restoreHomeMirror(backupDir);
 
       // Remove now-empty backup directory
       await fs.rm(backupDir, { recursive: true, force: true });

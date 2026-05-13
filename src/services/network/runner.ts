@@ -2,6 +2,17 @@ import { runCommand } from "../../core/exec.js";
 import { isSafeInterfaceName } from "./interface.js";
 import type { NetworkLogger, NetworkStepResult } from "./types.js";
 
+const MAX_DETAIL_LINES = 10;
+
+function truncateCommandOutput(text: string, maxLines = MAX_DETAIL_LINES): string {
+  const lines = text.split("\n");
+  if (lines.length <= maxLines) {
+    return text;
+  }
+  const rest = lines.length - maxLines;
+  return `${lines.slice(0, maxLines).join("\n")}\n… (${rest} more line(s); see network log file for full output)`;
+}
+
 export async function runStepCommand(
   name: string,
   command: string,
@@ -18,12 +29,13 @@ export async function runStepCommand(
     allowFailure: true,
   });
 
+  const rawOut = result.stdout || result.stderr || "";
   const detail =
-    result.stdout ||
-    result.stderr ||
-    (result.code === 0 ?
+    rawOut.trim() ?
+      truncateCommandOutput(rawOut.trim())
+    : result.code === 0 ?
       "Completed successfully (exit code 0, no output)."
-    : "Command failed with no output.");
+    : "Command failed with no output.";
   await logger.log(
     `[step:end] ${name} :: code=${result.code} :: ${detail.replace(/\n/g, " | ")}`,
   );

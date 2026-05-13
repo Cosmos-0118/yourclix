@@ -24,6 +24,26 @@ import {
   type SkipRecord,
 } from "./cleaner-skip-ui.js";
 
+function buildSafetyOverrideCandidates(
+  safetySkipped: SkipRecord[],
+): ValidatedDeletionCandidate[] {
+  return safetySkipped
+    .filter((entry) => isSafetySkipReason(entry.reason))
+    .map((entry) => {
+      if (!entry.category) {
+        return null;
+      }
+
+      return {
+        path: entry.path,
+        category: entry.category,
+        bytes: entry.bytes ?? 0,
+        mtimeMs: entry.mtimeMs ?? Date.now(),
+      } satisfies ValidatedDeletionCandidate;
+    })
+    .filter((entry): entry is ValidatedDeletionCandidate => entry !== null);
+}
+
 export async function executeCleaner(
   results: ScanResult[],
   options: CleanerOptions,
@@ -88,32 +108,26 @@ export async function executeCleaner(
 
   let selectedCandidates = candidates;
   let usedSafetyOverride = false;
+  const overrideCandidates = buildSafetyOverrideCandidates(safetySkipped);
 
   if (!selectedCandidates.length) {
-    console.log(
-      chalk.yellow("No eligible cleanup candidates after safety checks."),
-    );
+    if (overrideCandidates.length > 0) {
+      console.log(
+        chalk.yellow(
+          `No paths are eligible under the default safety rules. ` +
+            `${overrideCandidates.length} target(s) matched but were held back only by protected-path or age rules; you can approve an override to delete those.`,
+        ),
+      );
+    } else {
+      console.log(
+        chalk.yellow("No eligible cleanup candidates after safety checks."),
+      );
+    }
     if (options.verbose) {
       printSkippedBreakdown(skipped);
     } else {
       console.log(chalk.dim(`  ${summarizeSkippedInline(skipped)}`));
     }
-
-    const overrideCandidates = safetySkipped
-      .filter((entry) => isSafetySkipReason(entry.reason))
-      .map((entry) => {
-        if (!entry.category) {
-          return null;
-        }
-
-        return {
-          path: entry.path,
-          category: entry.category,
-          bytes: entry.bytes ?? 0,
-          mtimeMs: entry.mtimeMs ?? Date.now(),
-        } satisfies ValidatedDeletionCandidate;
-      })
-      .filter((entry): entry is ValidatedDeletionCandidate => entry !== null);
 
     if (overrideCandidates.length === 0) {
       return;

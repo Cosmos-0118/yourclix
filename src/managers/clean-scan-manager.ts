@@ -13,6 +13,33 @@ function join(home: string, target: string): string {
   return path.join(home, target);
 }
 
+/** Paths outside the home volume often cannot be moved into ~/.your-backups (EPERM, cross-volume). */
+function isUnderHome(resolvedPath: string, home: string): boolean {
+  const candidate = path.resolve(resolvedPath);
+  const root = path.resolve(home);
+  return candidate === root || candidate.startsWith(`${root}${path.sep}`);
+}
+
+/** macOS TMPDIR is usually /var/folders/…/T — not user-undoable; only include when it lives under ~. */
+function userTmpStarGlob(home: string): string | undefined {
+  const tmpDir = process.env.TMPDIR ?? "/tmp";
+  if (!isUnderHome(path.resolve(tmpDir), home)) {
+    return undefined;
+  }
+  return path.join(tmpDir, "*");
+}
+
+function userQuickLookThumbGlob(home: string): string | undefined {
+  const tmpDir = process.env.TMPDIR ?? "/tmp";
+  const qlBase = path.resolve(
+    path.join(tmpDir, "..", "C", "com.apple.QuickLook.thumbnailcache"),
+  );
+  if (!isUnderHome(qlBase, home)) {
+    return undefined;
+  }
+  return path.join(tmpDir, "..", "C", "com.apple.QuickLook.thumbnailcache/*");
+}
+
 const projectRoots = [
   "Developer",
   "Projects",
@@ -41,7 +68,8 @@ function filterByRunLevel(
 
 export function getCleanerScanCategories(mode: RunLevel): ScanCategory[] {
   const home = os.homedir();
-  const tmpDir = process.env.TMPDIR ?? "/tmp";
+  const tmpStar = userTmpStarGlob(home);
+  const quickLookGlob = userQuickLookThumbGlob(home);
 
   const categories: ScanCategory[] = [
     {
@@ -251,7 +279,7 @@ export function getCleanerScanCategories(mode: RunLevel): ScanCategory[] {
         join(home, "Library/Logs/DiagnosticReports/*"),
         join(home, "Library/Caches/com.apple.nsurlsessiond/*"),
         join(home, "Library/Caches/com.apple.finder/*"),
-        path.join(tmpDir, "*"),
+        ...(tmpStar ? [tmpStar] : []),
       ],
     },
     {
@@ -323,7 +351,7 @@ export function getCleanerScanCategories(mode: RunLevel): ScanCategory[] {
       globs: [
         path.join("/", "Library/Logs/*"),
         path.join("/", "private/var/log/*"),
-        path.join(tmpDir, "..", "C", "com.apple.QuickLook.thumbnailcache/*"),
+        ...(quickLookGlob ? [quickLookGlob] : []),
       ],
     },
   ];

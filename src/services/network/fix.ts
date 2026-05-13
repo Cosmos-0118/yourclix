@@ -3,8 +3,8 @@ import { CommandProgress } from "../../core/progress.js";
 import { createNetworkLogger } from "./logger.js";
 import { ensureSudoReady } from "./preflight.js";
 import {
-  getDefaultRouteInterface,
   listWifiDeviceNames,
+  resolveOutboundInterface,
 } from "./interface.js";
 import { runStepCommand, runStepScutilDhcpRefresh } from "./runner.js";
 import {
@@ -108,8 +108,9 @@ export async function netFix(dryRun = false): Promise<void> {
   const discoverResult = await progress.stepNetwork(
     "Discovering active interface",
     async () => {
-      activeIface = await getDefaultRouteInterface();
+      const resolved = await resolveOutboundInterface();
       wifiDevices = await listWifiDeviceNames();
+      activeIface = resolved.interface;
 
       if (!activeIface) {
         return {
@@ -117,18 +118,37 @@ export async function netFix(dryRun = false): Promise<void> {
           critical: false,
           status: "skipped",
           details: [
-            "Could not read default route (route -n get default). DHCP renewal and Wi-Fi targeting skipped.",
+            "Could not resolve a data interface (route, netstat, scutil, ipconfig, and Wi-Fi hardware were tried).",
+            "DHCP renewal and Wi-Fi soft-cycle were skipped.",
+            ...resolved.hints.slice(0, 4).map((h) => `Hint: ${h}`),
+            "Try: route -n get default   and   scutil --nwi   in Terminal, then re-run: your net fix",
           ],
         };
       }
 
       const kind = wifiDevices.has(activeIface) ? "Wi-Fi" : "Ethernet / other";
+      const via =
+        resolved.source.startsWith("route") ?
+          "routing table"
+        : resolved.source.includes("netstat") ?
+          "routing table (netstat)"
+        : resolved.source.includes("scutil") ?
+          "system network info (scutil)"
+        : resolved.source.includes("ipconfig") ?
+          "active IPv4 address (ipconfig)"
+        : "network hardware";
 
       return {
         name: `Active interface: ${activeIface} (${kind})`,
         critical: false,
         status: "success",
-        details: [`Default route is using interface ${activeIface}.`],
+        details: [
+          `Using ${activeIface} — detected via ${via} (${resolved.source}).`,
+          resolved.source.includes("ipconfig") ||
+          resolved.source.includes("hardware") ?
+            "If this is not your real default route (e.g. VPN), check `route -n get default` manually."
+          : "",
+        ].filter(Boolean),
       };
     },
   );
