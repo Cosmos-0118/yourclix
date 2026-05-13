@@ -8,6 +8,7 @@ import { CommandProgress } from "../core/progress.js";
 import { pathSizeFast } from "../core/fs-utils.js";
 import { runCommand } from "../core/exec.js";
 import { getOutdatedPackages } from "./brew-manager.js";
+import { collectBrokenSymlinkPaths } from "./broken-symlink-scan.js";
 import type { Issue } from "../core/types.js";
 
 export interface DoctorReport {
@@ -74,67 +75,6 @@ async function pathExistsStat(targetPath: string): Promise<boolean> {
 /**
  * Only dirs where broken symlinks commonly matter — not a whole-home crawl.
  */
-async function countBrokenSymlinksUnder(
-  dir: string,
-  maxDepth: number,
-  currentDepth = 0,
-): Promise<number> {
-  if (!(await pathExistsStat(dir))) {
-    return 0;
-  }
-
-  let broken = 0;
-  let entries;
-  try {
-    entries = await fs.readdir(dir, { withFileTypes: true });
-  } catch {
-    return 0;
-  }
-
-  for (const ent of entries) {
-    const full = path.join(dir, ent.name);
-    try {
-      const st = await fs.lstat(full);
-      if (st.isSymbolicLink()) {
-        try {
-          await fs.stat(full);
-        } catch {
-          broken += 1;
-        }
-      }
-      if (
-        ent.isDirectory() &&
-        currentDepth < maxDepth
-      ) {
-        broken += await countBrokenSymlinksUnder(
-          full,
-          maxDepth,
-          currentDepth + 1,
-        );
-      }
-    } catch {
-      continue;
-    }
-  }
-
-  return broken;
-}
-
-async function countBrokenSymlinksScoped(home: string): Promise<number> {
-  const roots: Array<{ path: string; maxDepth: number }> = [
-    { path: "/opt/homebrew/bin", maxDepth: 0 },
-    { path: "/usr/local/bin", maxDepth: 0 },
-    { path: path.join(home, "bin"), maxDepth: 0 },
-    { path: path.join(home, ".config"), maxDepth: 2 },
-  ];
-
-  let total = 0;
-  for (const { path: root, maxDepth } of roots) {
-    total += await countBrokenSymlinksUnder(root, maxDepth);
-  }
-  return total;
-}
-
 async function getDiskFreePercent(targetPath: string): Promise<number> {
   try {
     const stats = await fs.statfs(targetPath);
@@ -154,7 +94,7 @@ export async function runDoctorChecks(): Promise<DoctorReport> {
   const issues: Issue[] = [];
   const home = os.homedir();
   const config = await loadDoctorConfig();
-  const progress = new CommandProgress("System Doctor", 7);
+  const progress = new CommandProgress("System Doctor", 6);
 
   const targets = [
     path.join(home, "Downloads"),
@@ -232,20 +172,26 @@ export async function runDoctorChecks(): Promise<DoctorReport> {
     });
   }
 
-  const brokenCount = await progress.step(
+  const brokenPaths = await progress.step(
     "Scanning broken symlinks (brew bins, ~/.config, ~/bin)",
-    async () => countBrokenSymlinksScoped(home),
+    async () =>
+      collectBrokenSymlinkPaths({
+        home,
+        symlinkScanDepth: config.symlinkScanDepth,
+        ignorePatterns: config.ignorePatterns,
+      }),
   );
 
-  if (brokenCount > 0) {
+  if (brokenPaths.length > 0) {
     issues.push({
       id: "broken-symlinks",
       title: "Broken symlinks found",
-      description: `${brokenCount} broken symlinks detected`,
+      description: `${brokenPaths.length} broken symlinks detected`,
       safeToFix: true,
       command: "your fix",
       recommendedCommand: "your fix",
       severity: "warn",
+      fixContext: { brokenSymlinkPaths: brokenPaths },
     });
   }
 
@@ -262,8 +208,8 @@ export async function runDoctorChecks(): Promise<DoctorReport> {
       title: "Outdated Homebrew packages",
       description: `${brewOutdatedCount} outdated (${outdatedPkgs.formulae.length} formulae, ${outdatedPkgs.casks.length} casks)`,
       safeToFix: true,
-      command: "your brew optimize",
-      recommendedCommand: "your brew optimize",
+      command: "your fix",
+      recommendedCommand: "your fix",
       severity: "info",
     });
   }
@@ -333,6 +279,18 @@ export async function runDoctorChecks(): Promise<DoctorReport> {
   }
 
   return { issues, largeDirectories, developerCaches, diskFreePercent };
+}
+
+/** Used by `your fix` fallback when an issue predates `fixContext` on disk. */
+export async function getDoctorSymlinkScanContext(): Promise<{
+  symlinkScanDepth: number;
+  ignorePatterns: string[];
+}> {
+  const config = await loadDoctorConfig();
+  return {
+    symlinkScanDepth: config.symlinkScanDepth,
+    ignorePatterns: config.ignorePatterns,
+  };
 }
 
 export function printDoctorSummary(report: DoctorReport): void {

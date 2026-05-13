@@ -12,6 +12,11 @@ export interface CleanerOptions extends GlobalOptions {
   verbose?: boolean;
 }
 
+export interface FixContext {
+  /** Exact paths diagnosed for remediation (e.g. broken symlinks). */
+  brokenSymlinkPaths?: string[];
+}
+
 export interface Issue {
   id: string;
   title: string;
@@ -20,6 +25,8 @@ export interface Issue {
   severity?: "info" | "warn" | "critical";
   recommendedCommand?: string;
   safeToFix: boolean;
+  /** Optional structured data so `your fix` applies the same scope as diagnosis. */
+  fixContext?: FixContext;
 }
 
 export interface ScanResult {

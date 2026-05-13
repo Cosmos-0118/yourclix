@@ -24,7 +24,7 @@ node dist/index.js dev reset node --dry-run || true
 echo "[smoke] Startup list"
 node dist/index.js startup list || true
 
-echo "[smoke] Plugin list"
-node dist/index.js plugin list || true
+echo "[smoke] Fix dry run"
+node dist/index.js fix --dry-run -y || true
 
 echo "[smoke] Done"
