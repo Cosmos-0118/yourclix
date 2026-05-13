@@ -13,6 +13,12 @@ import { firstCommandOutput } from "../core/verification.js";
 import { bytesToHuman } from "../core/format.js";
 import { pathSizeFast, removePath } from "../core/fs-utils.js";
 import { confirm } from "../core/prompt.js";
+import {
+  analyzeBrewCaveats,
+  formatBrewCaveatFollowUps,
+  hasBrewCaveats,
+  printBrewCaveatGuidance,
+} from "../managers/brew-caveats-manager.js";
 
 interface CleanupTargetInfo {
   path: string;
@@ -266,14 +272,51 @@ function getDevResetPlan(tool: string): DevResetPlan {
   }
 }
 
-function buildDevManualRecovery(tool: string, plan: DevResetPlan): string[] {
+function buildDevManualRecovery(
+  tool: string,
+  plan: DevResetPlan,
+  caveatFollowUps: string[] = [],
+): string[] {
   const verifyCommand = `${plan.verifyCommand} ${plan.verifyArgs.join(" ")}`;
+  const extraSteps = [...new Set(caveatFollowUps)]
+    .map((step) =>
+      /^Keg-only formula/i.test(step) || /^Run:\s+/i.test(step) ?
+        step
+      : `Run: ${step}`,
+    );
+
   return buildManualRecoveryDetails("Manual recovery checklist:", [
     `Run: brew uninstall ${plan.brewPackage}`,
     `Run: brew install ${plan.brewPackage}`,
     `Run: ${verifyCommand}`,
+    ...extraSteps,
     `Run: your dev reset ${tool}`,
   ]);
+}
+
+async function verifyKegOnlyCommandResolution(
+  plan: DevResetPlan,
+): Promise<string | null> {
+  const [prefixResult, whichResult] = await Promise.all([
+    runCommand("brew", ["--prefix", plan.brewPackage], { allowFailure: true }),
+    runCommand("which", [plan.verifyCommand], { allowFailure: true }),
+  ]);
+
+  const prefix = prefixResult.stdout.trim();
+  if (!prefix) {
+    return `Installed ${plan.brewPackage} appears keg-only, but brew --prefix ${plan.brewPackage} returned no path.`;
+  }
+
+  const resolvedCommand = whichResult.stdout.trim();
+  if (!resolvedCommand) {
+    return `Installed ${plan.brewPackage} appears keg-only, but '${plan.verifyCommand}' is not resolvable in PATH.`;
+  }
+
+  if (!resolvedCommand.startsWith(`${prefix}/`)) {
+    return `${plan.verifyCommand} resolves to '${resolvedCommand}', not '${prefix}/bin/${plan.verifyCommand}'. PATH likely still points to a system binary.`;
+  }
+
+  return null;
 }
 
 export async function devClean(dryRun = false, yes = false): Promise<void> {
@@ -463,6 +506,14 @@ export async function devReset(tool: string, dryRun = false): Promise<void> {
       }),
   );
 
+  const caveatNotice = analyzeBrewCaveats(
+    [installResult.stdout, installResult.stderr].filter(Boolean).join("\n"),
+  );
+  const caveatFollowUps = formatBrewCaveatFollowUps(caveatNotice);
+  if (!dryRun && installResult.code === 0 && hasBrewCaveats(caveatNotice)) {
+    printBrewCaveatGuidance(`${title} caveats`, caveatNotice);
+  }
+
   const verifyResult = await progress.step(
     `Verifying ${title} is available`,
     async () =>
@@ -489,13 +540,25 @@ export async function devReset(tool: string, dryRun = false): Promise<void> {
     );
   }
 
+  const needsKegOnlyPathValidation =
+    !dryRun &&
+    installResult.code === 0 &&
+    caveatNotice.kegOnlyFormulae.length > 0;
+  if (needsKegOnlyPathValidation) {
+    const kegOnlyPathIssue = await verifyKegOnlyCommandResolution(plan);
+    if (kegOnlyPathIssue) {
+      failedDetails.push(kegOnlyPathIssue);
+    }
+  }
+
   if (!dryRun && failedDetails.length > 0) {
     console.log(chalk.bold(`Developer reset failed for ${tool}.`));
     for (const detail of failedDetails) {
       console.log(chalk.yellow(`- ${detail}`));
     }
 
-    for (const line of buildDevManualRecovery(tool, plan)) {
+    const recoverySteps = buildDevManualRecovery(tool, plan, caveatFollowUps);
+    for (const line of recoverySteps) {
       console.log(chalk.dim(line));
     }
 
@@ -503,8 +566,15 @@ export async function devReset(tool: string, dryRun = false): Promise<void> {
       code: "DEV_RESET_VERIFICATION_FAILED",
       summary: `Developer reset verification failed for ${tool}.`,
       details: failedDetails,
-      nextSteps: buildDevManualRecovery(tool, plan),
+      nextSteps: recoverySteps,
     });
+  }
+
+  if (!dryRun && caveatFollowUps.length > 0) {
+    console.log(chalk.bold("Homebrew caveat follow-up"));
+    for (const followUp of caveatFollowUps) {
+      console.log(chalk.dim(`- ${followUp}`));
+    }
   }
 
   if (!dryRun) {

@@ -6,6 +6,12 @@ import chalk from "chalk";
 import ora from "ora";
 import { runCommand, type ExecResult } from "../core/exec.js";
 import { confirm } from "../core/prompt.js";
+import {
+  analyzeBrewCaveats,
+  formatBrewCaveatFollowUps,
+  hasBrewCaveats,
+  printBrewCaveatGuidance,
+} from "../managers/brew-caveats-manager.js";
 import { ensureManagedPath } from "../managers/path-manager.js";
 
 type SetupProfile = "minimal" | "webdev" | "full";
@@ -557,6 +563,19 @@ async function installTarget(
     if (result.stdout.trim()) {
       console.log(chalk.dim(result.stdout));
     }
+
+    const caveatNotice = analyzeBrewCaveats(
+      [result.stdout, result.stderr].filter(Boolean).join("\n"),
+    );
+    if (hasBrewCaveats(caveatNotice)) {
+      printBrewCaveatGuidance(`${target.name} caveats`, caveatNotice);
+      const followUps = formatBrewCaveatFollowUps(caveatNotice);
+      await logger.log(
+        "warn",
+        `${target.type}:${target.name}: caveats => ${followUps.join(" | ")}`,
+      );
+    }
+
     await logger.log("info", `${target.type}:${target.name}: installed`);
     return "success";
   }

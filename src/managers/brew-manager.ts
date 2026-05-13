@@ -4,6 +4,11 @@ import {
   runCommand,
   runCommandFilteredStream,
 } from "../core/exec.js";
+import {
+  analyzeBrewCaveats,
+  formatBrewCaveatFollowUps,
+  hasBrewCaveats,
+} from "./brew-caveats-manager.js";
 
 export type BrewStepStatus = "success" | "warn" | "failed" | "skipped";
 
@@ -223,21 +228,17 @@ export async function runBrewStep(
   const fullVerbose = Boolean(streamOpts?.verbose);
 
   const result =
-    useStream && !fullVerbose ?
+    useStream ?
       await runCommandFilteredStream(command, args, {
         allowFailure: true,
         env: BREW_STREAM_ENV,
         heartbeatMs: streamOpts?.heartbeatMs,
-        suppressLine: suppressBrewPourNoise,
-        formatLine: formatBrewStreamLine,
+        suppressLine: fullVerbose ? undefined : suppressBrewPourNoise,
+        formatLine: fullVerbose ? undefined : formatBrewStreamLine,
       })
     : await runCommand(command, args, {
         dryRun,
         allowFailure: true,
-        stdio: useStream && fullVerbose ? "inherit" : undefined,
-        env: useStream && fullVerbose ? BREW_STREAM_ENV : undefined,
-        heartbeatMs:
-          useStream && fullVerbose ? streamOpts?.heartbeatMs : undefined,
       });
 
   let detail: string;
@@ -257,12 +258,28 @@ export async function runBrewStep(
       : "Command failed with no output.");
   }
 
+  const caveatNotice = analyzeBrewCaveats(
+    [result.stdout, result.stderr].filter(Boolean).join("\n"),
+  );
+  const details = [detail];
+  if (hasBrewCaveats(caveatNotice)) {
+    const followUps = formatBrewCaveatFollowUps(caveatNotice);
+    details.push(
+      caveatNotice.kegOnlyFormulae.length > 0 ?
+        `Homebrew caveats detected (keg-only: ${caveatNotice.kegOnlyFormulae.join(", ")}).`
+      : "Homebrew caveats detected.",
+    );
+    for (const followUp of followUps.slice(0, 2)) {
+      details.push(`Follow-up: ${followUp}`);
+    }
+  }
+
   return {
     name,
     command: commandLine(command, args),
     critical,
     status: result.code === 0 ? "success" : "failed",
-    details: [detail],
+    details,
   };
 }
 
