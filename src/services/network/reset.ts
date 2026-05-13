@@ -11,6 +11,12 @@ import { CommandProgress } from "../../core/progress.js";
 import { createNetworkLogger } from "./logger.js";
 import { ensureSudoReady } from "./preflight.js";
 import { runStepCommand } from "./runner.js";
+import {
+  printNetBackupFooter,
+  printNetResetBanner,
+  printNetResetPlistTargets,
+  printNetResetSuccess,
+} from "./net-ui.js";
 import { hasCriticalFailure, printNetworkSummary } from "./summary.js";
 import type { NetworkStepResult } from "./types.js";
 
@@ -35,10 +41,14 @@ const SYSTEM_CONFIG_DIR = "/Library/Preferences/SystemConfiguration";
 const POLICY_HINT =
   "Permission denied by macOS security policy. Grant Full Disk Access to your terminal app and VS Code, then retry.";
 
-function buildNetworkManualRecovery(backupDir: string): string[] {
+function buildNetworkManualRecovery(backupDir: string | null): string[] {
+  const backupHint =
+    backupDir ?
+      `If services are broken, restore backup files from ${backupDir} to /Library/Preferences/SystemConfiguration using sudo cp.`
+    : "If you have a Time Machine backup or another Mac, restore SystemConfiguration plists from there (see log for paths touched).";
   return buildManualRecoveryDetails("Manual recovery checklist:", [
     "Open System Settings > Network and confirm your Wi-Fi/Ethernet services are present.",
-    `If services are broken, restore backup files from ${backupDir} to /Library/Preferences/SystemConfiguration using sudo cp.`,
+    backupHint,
     "Run: sudo killall -HUP mDNSResponder",
     "Run: networksetup -listallnetworkservices",
     "If still broken, reboot macOS and re-run: your net reset --yes",
@@ -53,25 +63,52 @@ function isOperationNotPermitted(detail: string): boolean {
   return detail.toLowerCase().includes("operation not permitted");
 }
 
+/** Parse `networksetup -listallnetworkservices` — leading `*` marks disabled (see networksetup(8)). */
+function parseNetworksetupServicesList(stdout: string): {
+  enabled: string[];
+  disabled: string[];
+} {
+  const enabled: string[] = [];
+  const disabled: string[] = [];
+
+  for (const raw of stdout.split("\n")) {
+    const line = raw.trim();
+    if (!line) {
+      continue;
+    }
+    if (/^An asterisk/i.test(line)) {
+      continue;
+    }
+    if (/^hardware port:/i.test(line)) {
+      continue;
+    }
+
+    if (line.startsWith("*")) {
+      const name = line.replace(/^\*+\s*/, "").trim();
+      if (name) {
+        disabled.push(name);
+      }
+      continue;
+    }
+
+    enabled.push(line);
+  }
+
+  return { enabled, disabled };
+}
+
 export async function netReset(dryRun = false, yes = false): Promise<void> {
-  console.log(chalk.bold("Running network reset..."));
-  console.log(
-    chalk.yellow("This is destructive and may temporarily disrupt networking."),
-  );
+  printNetResetBanner(dryRun);
 
   if (process.env.SSH_CONNECTION || process.env.SSH_TTY) {
     console.log(
       chalk.yellow(
-        "Warning: running over SSH may disconnect your current session.",
+        "\nWarning: running over SSH may disconnect your current session.",
       ),
     );
   }
 
-  console.log(chalk.bold("Plist files targeted:"));
-  for (const target of NETWORK_TARGETS) {
-    const suffix = target.optional ? " (optional on newer macOS)" : "";
-    console.log(`- ${target.path}${suffix}`);
-  }
+  printNetResetPlistTargets(NETWORK_TARGETS);
 
   const approved = await confirm("Proceed with network reset?", yes);
   if (!approved) {
@@ -81,11 +118,13 @@ export async function netReset(dryRun = false, yes = false): Promise<void> {
 
   const logger = await createNetworkLogger("reset");
   const steps: NetworkStepResult[] = [];
-  const progress = new CommandProgress("Network Reset", 8);
+  const progress = new CommandProgress("Recovery steps", 8);
   let copiedFiles = 0;
   let deletedFiles = 0;
+  let backupDirMaterialized = false;
+  let backupPlanned = false;
 
-  const precheck = await progress.interactiveStep(
+  const precheck = await progress.interactiveStepWithStatus(
     "Checking sudo readiness",
     async () => ensureSudoReady(dryRun, logger),
   );
@@ -177,7 +216,9 @@ export async function netReset(dryRun = false, yes = false): Promise<void> {
         await progress.step("Preparing backup directory", async () => {
           if (!dryRun) {
             await fs.mkdir(backupDir, { recursive: true });
+            backupDirMaterialized = true;
           }
+          backupPlanned = true;
 
           return {
             name: "Prepare backup directory",
@@ -423,11 +464,23 @@ export async function netReset(dryRun = false, yes = false): Promise<void> {
 
         steps.push(
           await progress.step("Verifying network services", async () => {
+            if (dryRun) {
+              return {
+                name: "Verify network services",
+                critical: false,
+                status: "skipped",
+                details: [
+                  "Dry-run: would run `networksetup -listallnetworkservices` after plist reset.",
+                  "Service output is not parsed in dry-run (simulated command output would be misleading).",
+                ],
+              } satisfies NetworkStepResult;
+            }
+
             const services = await runCommand(
               "networksetup",
               ["-listallnetworkservices"],
               {
-                dryRun,
+                dryRun: false,
                 allowFailure: true,
               },
             );
@@ -443,35 +496,44 @@ export async function netReset(dryRun = false, yes = false): Promise<void> {
               } satisfies NetworkStepResult;
             }
 
-            const rows = (services.stdout || "")
-              .split("\n")
-              .map((line) => line.trim())
-              .filter((line) => line && !line.startsWith("An asterisk"));
+            const { enabled, disabled } = parseNetworksetupServicesList(
+              services.stdout || "",
+            );
 
-            if (rows.length === 0) {
-              const noChange = !dryRun && copiedFiles === 0 && deletedFiles === 0;
+            if (enabled.length === 0) {
+              const noChange = copiedFiles === 0 && deletedFiles === 0;
+              const disabledHint =
+                disabled.length > 0 ?
+                  `Only disabled service(s) reported (${disabled.slice(0, 8).join(", ")}${disabled.length > 8 ? ", …" : ""}). An asterisk (*) denotes disabled in networksetup output — enable at least one service in System Settings > Network.`
+                : "No network services listed.";
+
               return {
                 name: "Verify network services",
                 critical: !noChange,
                 status: noChange ? "skipped" : "failed",
                 details: [
                   noChange ?
-                    "No network services reported; reset changed 0 files, so verification is informational only."
-                  : "No active network services found after reset.",
+                    "No enabled services and reset changed 0 files — verification is informational only."
+                  : disabledHint,
                   ...(noChange ? [] : buildNetworkManualRecovery(backupDir)),
                 ],
               } satisfies NetworkStepResult;
+            }
+
+            const detailLines = [
+              `Enabled services (${enabled.length}): ${enabled.join(", ")}`,
+            ];
+            if (disabled.length > 0) {
+              detailLines.push(
+                `Disabled (not sufficient alone): ${disabled.slice(0, 8).join(", ")}${disabled.length > 8 ? ", …" : ""}`,
+              );
             }
 
             return {
               name: "Verify network services",
               critical: false,
               status: "success",
-              details: [
-                dryRun ?
-                  `Would verify services: ${rows.join(", ")}`
-                : `Services present: ${rows.join(", ")}`,
-              ],
+              details: detailLines,
             } satisfies NetworkStepResult;
           }),
         );
@@ -518,26 +580,33 @@ export async function netReset(dryRun = false, yes = false): Promise<void> {
   }
 
   printNetworkSummary("your net reset", steps, logger.path);
-  console.log(chalk.dim(`Backup path: ${backupDir}`));
-  console.log(
-    chalk.dim(
-      "Restore hint: copy files from backup back to /Library/Preferences/SystemConfiguration/ (sudo), then reboot.",
-    ),
-  );
+
+  printNetBackupFooter({
+    backupDirMaterialized,
+    backupPlanned,
+    dryRun,
+    backupDir,
+  });
 
   if (hasCriticalFailure(steps)) {
     throw new ActionableError({
       code: "NET_RESET_CRITICAL_FAILURE",
       summary: "One or more critical network reset steps failed.",
-      nextSteps: buildNetworkManualRecovery(backupDir),
+      nextSteps: buildNetworkManualRecovery(
+        backupDirMaterialized ? backupDir : null,
+      ),
       details: [
         `See detailed reset log: ${logger.path}`,
-        `Backup path: ${backupDir}`,
+        ...(backupDirMaterialized ?
+          [`Backup path: ${backupDir}`]
+        : [
+            "No backup directory was written to disk; do not assume a restore path exists.",
+          ]),
       ],
     });
   }
 
-  console.log(chalk.green("Network reset completed."));
+  printNetResetSuccess();
   printNextCommands("Next commands:", [
     "your net fix",
     "your doctor",

@@ -61,6 +61,8 @@ export class CommandProgress {
       console.log(chalk.red(`  ✖ ${prefix} ${label}`));
     } else if (result.status === "warn") {
       console.log(chalk.yellow(`  ⚠ ${prefix} ${label}`));
+    } else if (result.status === "skipped") {
+      console.log(chalk.yellow(`  ⊘ ${prefix} ${label} (skipped)`));
     } else {
       console.log(chalk.green(`  ✔ ${prefix} ${label}`));
     }

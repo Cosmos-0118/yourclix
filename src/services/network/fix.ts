@@ -1,4 +1,4 @@
-import chalk from "chalk";
+import { ActionableError } from "../../core/actionable-error.js";
 import { CommandProgress } from "../../core/progress.js";
 import { createNetworkLogger } from "./logger.js";
 import { ensureSudoReady } from "./preflight.js";
@@ -7,6 +7,11 @@ import {
   listWifiDeviceNames,
 } from "./interface.js";
 import { runStepCommand, runStepScutilDhcpRefresh } from "./runner.js";
+import {
+  printNetFixBanner,
+  printNetFixPipelineHint,
+  printNetFixSuccess,
+} from "./net-ui.js";
 import { hasCriticalFailure, printNetworkSummary } from "./summary.js";
 import type { NetworkLogger, NetworkStepResult } from "./types.js";
 
@@ -54,10 +59,12 @@ async function softCycleWifi(
     logger,
   );
 
+  const onFailed = on.status !== "success";
+
   return {
     name: "Wi-Fi soft-cycle",
-    critical: false,
-    status: on.status === "success" ? "success" : "failed",
+    critical: onFailed,
+    status: onFailed ? "failed" : "success",
     details: [
       `Toggled ${iface} off, waited 2s, then on (networksetup -setairportpower).`,
       on.details[1] ?? on.details[0] ?? "",
@@ -79,12 +86,12 @@ function skipStep(
 }
 
 export async function netFix(dryRun = false): Promise<void> {
-  console.log(
-    chalk.bold("Running deep network diagnostics and repair…"),
-  );
+  printNetFixBanner(dryRun);
+  printNetFixPipelineHint();
+
   const logger = await createNetworkLogger("fix");
   const steps: NetworkStepResult[] = [];
-  const progress = new CommandProgress("", TOTAL_STEPS);
+  const progress = new CommandProgress("Repair steps", TOTAL_STEPS);
 
   const precheck = await progress.interactiveStepWithStatus(
     "Checking sudo readiness",
@@ -226,11 +233,22 @@ export async function netFix(dryRun = false): Promise<void> {
   printNetworkSummary("your net fix", steps, logger.path);
 
   if (hasCriticalFailure(steps)) {
-    throw new Error("One or more critical network fix steps failed.");
+    const failed = steps.filter((s) => s.critical && s.status === "failed");
+    throw new ActionableError({
+      code: "NET_FIX_CRITICAL_FAILURE",
+      summary: "One or more critical network fix steps failed.",
+      details: [
+        `See detailed log: ${logger.path}`,
+        ...failed.flatMap((s) => [`${s.name}:`, ...s.details.slice(0, 2)]),
+      ],
+      nextSteps: [
+        "Run: your net fix --dry-run",
+        "In a local Terminal (not non-interactive SSH), run: sudo -v  # then retry: your net fix",
+        "Run: your net reset --dry-run   # only if you intend to reset plist backups",
+        "Run: your doctor",
+      ],
+    });
   }
 
-  console.log(
-    chalk.green("Network fix completed. ") +
-      chalk.dim("Re-establishing connection…"),
-  );
+  printNetFixSuccess();
 }

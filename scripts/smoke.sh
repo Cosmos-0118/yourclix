@@ -15,6 +15,9 @@ node dist/index.js clean --verify || true
 echo "[smoke] Net reset dry run"
 node dist/index.js net reset --dry-run -y || true
 
+echo "[smoke] Net fix dry run"
+node dist/index.js net fix --dry-run || true
+
 echo "[smoke] Spotlight reset dry run"
 node dist/index.js spotlight reset --dry-run || true
 
