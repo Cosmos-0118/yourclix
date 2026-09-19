@@ -21,6 +21,14 @@ export async function runBrewOutdatedRemediation(
   verbose = false,
 ): Promise<void> {
   const before = await getOutdatedPackages();
+  if (!before.ok) {
+    throw new ActionableError({
+      code: "FIX_BREW_OUTDATED_CHECK_FAILED",
+      summary: "Could not determine whether Homebrew packages are outdated.",
+      details: [before.error ?? "brew outdated failed without details."],
+      nextSteps: ["Run: brew config", "Run: brew doctor", "Run: brew outdated --verbose"],
+    });
+  }
   const beforeCount = countOutdated(before);
 
   if (beforeCount === 0) {
@@ -42,7 +50,11 @@ export async function runBrewOutdatedRemediation(
       false,
       false,
       true,
-      { verbose, heartbeatMs: 12_000 },
+      {
+        verbose,
+        heartbeatMs: 12_000,
+        env: { HOMEBREW_NO_AUTO_UPDATE: "1" },
+      },
     );
     steps.push(plan);
     if (plan.status === "failed") {
@@ -57,6 +69,26 @@ export async function runBrewOutdatedRemediation(
       steps.push(fallback);
     }
   } else {
+    const update = await runBrewStep(
+      "Refresh Homebrew metadata",
+      "brew",
+      ["update-if-needed"],
+      true,
+      false,
+      true,
+      { verbose, heartbeatMs: 12_000 },
+    );
+    steps.push(update);
+    if (update.status === "failed") {
+      printBrewSummary("Homebrew remediation", steps);
+      throw new ActionableError({
+        code: "FIX_BREW_UPDATE_FAILED",
+        summary: "Homebrew metadata could not be refreshed; no packages were upgraded.",
+        details: update.details.slice(0, 2),
+        nextSteps: ["Run: brew doctor", "Run: brew update", "Retry: your fix"],
+      });
+    }
+
     steps.push(
       await runBrewStep(
         "Upgrade outdated formulae and casks",
@@ -65,7 +97,11 @@ export async function runBrewOutdatedRemediation(
         true,
         false,
         true,
-        { verbose, heartbeatMs: 12_000 },
+        {
+          verbose,
+          heartbeatMs: 12_000,
+          env: { HOMEBREW_NO_AUTO_UPDATE: "1" },
+        },
       ),
     );
   }
@@ -131,6 +167,14 @@ export async function runBrewOutdatedRemediation(
 
   if (!fixDryRun && beforeCount > 0) {
     const after = await getOutdatedPackages();
+    if (!after.ok) {
+      throw new ActionableError({
+        code: "FIX_BREW_VERIFY_FAILED",
+        summary: "Homebrew upgrade completed, but its result could not be verified.",
+        details: [after.error ?? "brew outdated failed during verification."],
+        nextSteps: ["Run: brew outdated --verbose", "Run: your doctor"],
+      });
+    }
     const afterCount = countOutdated(after);
     if (afterCount >= beforeCount) {
       const remaining = [...after.formulae, ...after.casks].slice(0, 12);

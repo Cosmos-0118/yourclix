@@ -9,6 +9,7 @@ import {
   printCleanupResult,
   runBrewStep,
   type BrewStepResult,
+  type OutdatedPackages,
 } from "../../managers/brew-manager.js";
 
 function isWarningOnlyDoctorOutput(step: BrewStepResult): boolean {
@@ -16,9 +17,9 @@ function isWarningOnlyDoctorOutput(step: BrewStepResult): boolean {
     return false;
   }
 
-  const details = (step.details[0] ?? "").toLowerCase();
-  const hasWarning = details.includes("warning:");
-  const hasError = details.includes("error:");
+  const details = step.details.join("\n").toLowerCase();
+  const hasWarning = /\bwarning\b/.test(details);
+  const hasError = /\berror\b|\bfatal\b|\bfailed\b/.test(details);
   return hasWarning && !hasError;
 }
 
@@ -32,22 +33,94 @@ function normalizeDoctorStep(step: BrewStepResult): BrewStepResult {
     status: "warn",
     details: [
       "Brew doctor reported warnings (non-fatal).",
-      ...(step.details.length > 0 ? [step.details[0]] : []),
+      ...step.details.slice(0, 2),
     ],
+  };
+}
+
+function skippedStep(
+  name: string,
+  command: string,
+  critical: boolean,
+  reason: string,
+): BrewStepResult {
+  return {
+    name,
+    command,
+    critical,
+    status: "skipped",
+    details: [reason],
   };
 }
 
 export async function brewDoctor(dryRun = false): Promise<void> {
   const progress = new CommandProgress("Brew Doctor", 1);
-  const steps: BrewStepResult[] = [];
-
   const doctorStepRaw = await progress.step("Running brew doctor", () =>
     runBrewStep("Brew doctor", "brew", ["doctor"], false, dryRun),
   );
   const doctorStep = normalizeDoctorStep(doctorStepRaw);
-  steps.push(doctorStep);
 
-  printBrewSummary("your brew doctor", steps);
+  printBrewSummary("your brew doctor", [doctorStep]);
+  if (doctorStep.status === "failed") {
+    throw new Error("Homebrew doctor failed; see the diagnostic output above.");
+  }
+}
+
+export async function brewStatus(): Promise<void> {
+  const progress = new CommandProgress("Brew Status", 4);
+  const steps: BrewStepResult[] = [];
+
+  steps.push(
+    await progress.step("Reading Homebrew version", () =>
+      runBrewStep("Brew version", "brew", ["--version"], true, false),
+    ),
+  );
+  steps.push(
+    await progress.step("Reading Homebrew prefix", () =>
+      runBrewStep("Brew prefix", "brew", ["--prefix"], true, false),
+    ),
+  );
+  steps.push(
+    await progress.step("Reading Homebrew configuration", () =>
+      runBrewStep("Brew config", "brew", ["config"], false, false),
+    ),
+  );
+
+  let outdated: OutdatedPackages | undefined;
+  steps.push(
+    await progress.interactiveStepWithStatus(
+      "Checking outdated formulae and casks",
+      async () => {
+        outdated = await getOutdatedPackages();
+        return {
+          name: "Outdated package check",
+          command: "brew outdated --json=v2",
+          critical: true,
+          status: outdated.ok ? "success" as const : "failed" as const,
+          details: [
+            outdated.ok ?
+              `${outdated.formulae.length} formulae and ${outdated.casks.length} casks are outdated.`
+            : outdated.error ?? "Could not determine outdated Homebrew packages.",
+          ],
+        } satisfies BrewStepResult;
+      },
+    ),
+  );
+
+  printBrewSummary("your brew status", steps);
+  if (outdated?.ok && (outdated.formulae.length > 0 || outdated.casks.length > 0)) {
+    console.log(
+      chalk.yellow(
+        `Outdated: ${[...outdated.formulae, ...outdated.casks].join(", ")}`,
+      ),
+    );
+  } else if (outdated?.ok) {
+    console.log(chalk.green("All installed formulae and casks are current."));
+  }
+
+  if (hasCriticalBrewFailure(steps)) {
+    throw new Error("One or more critical brew status checks failed.");
+  }
 }
 
 export async function brewClean(dryRun = false): Promise<void> {
@@ -58,42 +131,54 @@ export async function brewClean(dryRun = false): Promise<void> {
     runBrewStep(
       "Cleanup preview",
       "brew",
-      ["cleanup", "--prune=all", "-n"],
-      false,
+      ["cleanup", "--prune=all", "--dry-run"],
+      true,
       false,
     ),
   );
   steps.push(previewStep);
 
-  printCleanupCandidates(previewStep.details[0] ?? "");
-
-  if (dryRun) {
-    progress.tick("Skipping cleanup apply step due to dry-run");
-    steps.push({
-      name: "Cleanup apply",
-      command: "brew cleanup --prune=all",
-      critical: true,
-      status: "skipped",
-      details: ["Skipped because dry-run is enabled."],
-    });
-  } else {
-    const cleanupStep = await progress.step(
-      "Removing stale brew artifacts",
-      () =>
-        runBrewStep(
-          "Cleanup apply",
-          "brew",
-          ["cleanup", "--prune=all"],
-          true,
-          false,
-        ),
+  if (previewStep.status === "failed") {
+    progress.tick("Skipping cleanup apply step because preview failed");
+    steps.push(
+      skippedStep(
+        "Cleanup apply",
+        "brew cleanup --prune=all",
+        true,
+        "Skipped because cleanup preview failed.",
+      ),
     );
-    steps.push(cleanupStep);
-    printCleanupResult(cleanupStep.details[0] ?? "", false);
+  } else {
+    printCleanupCandidates(previewStep.details[0] ?? "");
+
+    if (dryRun) {
+      progress.tick("Skipping cleanup apply step due to dry-run");
+      steps.push(
+        skippedStep(
+          "Cleanup apply",
+          "brew cleanup --prune=all",
+          true,
+          "Skipped because dry-run is enabled.",
+        ),
+      );
+    } else {
+      const cleanupStep = await progress.step(
+        "Removing stale brew artifacts",
+        () =>
+          runBrewStep(
+            "Cleanup apply",
+            "brew",
+            ["cleanup", "--prune=all"],
+            true,
+            false,
+          ),
+      );
+      steps.push(cleanupStep);
+      printCleanupResult(cleanupStep.details[0] ?? "", false);
+    }
   }
 
   printBrewSummary("your brew clean", steps);
-
   if (hasCriticalBrewFailure(steps)) {
     throw new Error("One or more critical brew clean steps failed.");
   }
@@ -104,23 +189,24 @@ export async function brewClean(dryRun = false): Promise<void> {
 export async function brewUpgrade(
   dryRun = false,
   verbose = false,
+  greedy = false,
 ): Promise<void> {
-  const outdated = await getOutdatedPackages();
-  const totalTargets = outdated.formulae.length + outdated.casks.length;
-  const stepCount = 1 + Math.max(totalTargets, 1);
-
   const streamOpts = { verbose, heartbeatMs: 45_000 } as const;
+  const upgradeStreamOpts = {
+    ...streamOpts,
+    env: { HOMEBREW_NO_AUTO_UPDATE: "1" },
+  } as const;
 
   console.log(
     boxen(
       [
         chalk.white.bold("Plan"),
         "",
-        chalk.green(
-          `  Formulae to upgrade     ${chalk.bold(String(outdated.formulae.length))}`,
-        ),
+        chalk.green("  Formulae to upgrade     determined after metadata refresh"),
         chalk.magenta(
-          `  Casks to upgrade        ${chalk.bold(String(outdated.casks.length))}`,
+          greedy ?
+            "  Casks to upgrade        includes latest/auto-updating casks"
+          : "  Casks to upgrade        standard outdated casks only",
         ),
         "",
         verbose ?
@@ -151,136 +237,162 @@ export async function brewUpgrade(
     ),
   );
 
-  const progress = new CommandProgress("", stepCount);
-
   const steps: BrewStepResult[] = [];
+  const preflight = new CommandProgress("", 2);
 
-  const updateStep = await progress.interactiveStepWithStatus(
-    "brew update — refresh taps & metadata",
-    () =>
-      runBrewStep(
+  const updateStep = dryRun ?
+    (() => {
+      preflight.tick("Dry-run: skipping Homebrew metadata update");
+      return skippedStep(
         "Brew update",
-        "brew",
-        ["update", "--verbose"],
+        "brew update-if-needed",
         true,
-        false,
-        true,
-        streamOpts,
-      ),
-  );
+        "Skipped because dry-run is enabled.",
+      );
+    })()
+  : await preflight.interactiveStepWithStatus(
+      "brew update — refresh taps & metadata",
+      () =>
+        runBrewStep(
+          "Brew update",
+          "brew",
+          verbose ?
+            ["update", "--auto-update", "--verbose"]
+          : ["update-if-needed"],
+          true,
+          false,
+          true,
+          streamOpts,
+        ),
+    );
   steps.push(updateStep);
 
   if (updateStep.status === "failed") {
-    progress.tick("Skipping upgrade targets due to brew update failure");
-    for (const pkg of outdated.formulae) {
-      steps.push({
-        name: `Upgrade formula ${pkg}`,
-        command: `brew upgrade ${pkg}`,
-        critical: true,
-        status: "skipped",
-        details: ["Skipped because brew update failed."],
-      });
-    }
-    for (const cask of outdated.casks) {
-      steps.push({
-        name: `Upgrade cask ${cask}`,
-        command: `brew upgrade --cask ${cask}`,
-        critical: true,
-        status: "skipped",
-        details: ["Skipped because brew update failed."],
-      });
-    }
-
     printBrewSummary("your brew upgrade", steps);
-    throw new Error("One or more critical brew upgrade steps failed.");
+    throw new Error("Homebrew metadata update failed; no packages were upgraded.");
   }
+
+  let discovered: OutdatedPackages | undefined;
+  const discoveryStep = await preflight.interactiveStepWithStatus(
+    "brew outdated — discover upgrade targets",
+    async () => {
+      discovered = await getOutdatedPackages({ greedy });
+      return {
+        name: "Outdated package discovery",
+        command: `brew outdated --json=v2${greedy ? " --greedy" : ""}`,
+        critical: true,
+        status: discovered.ok ? "success" as const : "failed" as const,
+        details: [
+          discovered.ok ?
+            `${discovered.formulae.length} formulae and ${discovered.casks.length} casks are outdated.`
+          : discovered.error ?? "Could not determine outdated Homebrew packages.",
+        ],
+      } satisfies BrewStepResult;
+    },
+  );
+  steps.push(discoveryStep);
+
+  if (!discovered || !discovered.ok || discoveryStep.status === "failed") {
+    printBrewSummary("your brew upgrade", steps);
+    throw new Error(
+      discovered?.error ?? "Could not determine outdated Homebrew packages.",
+    );
+  }
+
+  const formulae = discovered.formulae;
+  const casks = discovered.casks;
+  const totalTargets = formulae.length + casks.length;
+  const actionCount = (formulae.length > 0 ? 1 : 0) + (casks.length > 0 ? 1 : 0);
+  const actions = new CommandProgress("", Math.max(actionCount, 1));
 
   if (totalTargets === 0) {
-    progress.tick("No outdated formulae or casks found");
+    actions.tick("No outdated formulae or casks found");
   }
 
-  if (dryRun && totalTargets > 0) {
-    progress.tick("Dry-run: upgrade commands will not be executed");
-  }
-
-  for (const pkg of outdated.formulae) {
+  if (formulae.length > 0) {
+    const upgradeArgs = [
+      "upgrade",
+      ...(verbose ? ["--verbose"] : []),
+      "--formula",
+      ...formulae,
+    ];
     if (dryRun) {
-      progress.tick(`Would upgrade formula ${pkg}`);
+      actions.tick(`Would upgrade ${formulae.length} formulae`);
       steps.push({
-        name: `Upgrade formula ${pkg}`,
-        command: `brew upgrade ${pkg}`,
+        name: "Upgrade formulae",
+        command: ["brew", ...upgradeArgs].join(" "),
         critical: true,
         status: "skipped",
-        details: ["Skipped because dry-run is enabled."],
+        details: [`Would upgrade: ${formulae.join(", ")}`],
       });
-      continue;
-    }
-
-    const step = await progress.interactiveStepWithStatus(
-      `brew upgrade ${pkg} (formula)`,
-      () =>
-        runBrewStep(
-          `Upgrade formula ${pkg}`,
-          "brew",
-          [...(verbose ? ["upgrade", "--verbose", pkg] : ["upgrade", pkg])],
-          true,
-          false,
-          true,
-          streamOpts,
+    } else {
+      steps.push(
+        await actions.interactiveStepWithStatus(
+          `brew upgrade ${formulae.length} formulae`,
+          () =>
+            runBrewStep(
+              "Upgrade formulae",
+              "brew",
+              upgradeArgs,
+              true,
+              false,
+              true,
+              upgradeStreamOpts,
+            ),
         ),
-    );
-    steps.push(step);
+      );
+    }
   }
 
-  for (const cask of outdated.casks) {
+  if (casks.length > 0) {
+    const upgradeArgs = [
+      "upgrade",
+      ...(verbose ? ["--verbose"] : []),
+      ...(greedy ? ["--greedy"] : []),
+      "--cask",
+      ...casks,
+    ];
     if (dryRun) {
-      progress.tick(`Would upgrade cask ${cask}`);
+      actions.tick(`Would upgrade ${casks.length} casks`);
       steps.push({
-        name: `Upgrade cask ${cask}`,
-        command: `brew upgrade --cask ${cask}`,
+        name: "Upgrade casks",
+        command: ["brew", ...upgradeArgs].join(" "),
         critical: true,
         status: "skipped",
-        details: ["Skipped because dry-run is enabled."],
+        details: [`Would upgrade: ${casks.join(", ")}`],
       });
-      continue;
-    }
-
-    const step = await progress.interactiveStepWithStatus(
-      `brew upgrade --cask ${cask}`,
-      () =>
-        runBrewStep(
-          `Upgrade cask ${cask}`,
-          "brew",
-          [
-            ...(verbose ?
-              ["upgrade", "--verbose", "--cask", cask]
-            : ["upgrade", "--cask", cask]),
-          ],
-          true,
-          false,
-          true,
-          streamOpts,
+    } else {
+      steps.push(
+        await actions.interactiveStepWithStatus(
+          `brew upgrade ${casks.length} casks`,
+          () =>
+            runBrewStep(
+              "Upgrade casks",
+              "brew",
+              upgradeArgs,
+              true,
+              false,
+              true,
+              upgradeStreamOpts,
+            ),
         ),
-    );
-    steps.push(step);
+      );
+    }
   }
 
   if (totalTargets > 0) {
     const rows = [
-      ...outdated.formulae.map(
+      ...formulae.map(
         (pkg) => `${chalk.green("●")}  ${chalk.bold("formula")}  ${pkg}`,
       ),
-      ...outdated.casks.map(
+      ...casks.map(
         (cask) => `${chalk.magenta("●")}  ${chalk.bold("cask")}    ${cask}`,
       ),
     ];
 
     console.log(
       boxen(rows.join("\n"), {
-        title:
-          chalk.bold.white(
-            dryRun ? " Planned targets " : " Upgrade targets ",
-          ),
+        title: chalk.bold.white(dryRun ? " Planned targets " : " Upgrade targets "),
         titleAlignment: "left",
         borderStyle: "round",
         borderColor: "green",
@@ -291,7 +403,6 @@ export async function brewUpgrade(
   }
 
   printBrewSummary("your brew upgrade", steps);
-
   if (hasCriticalBrewFailure(steps)) {
     throw new Error("One or more critical brew upgrade steps failed.");
   }
@@ -299,10 +410,65 @@ export async function brewUpgrade(
   console.log(chalk.green("Brew upgrade complete."));
 }
 
+export async function brewAutoremove(dryRun = false): Promise<void> {
+  const progress = new CommandProgress("Brew Autoremove", 2);
+  const steps: BrewStepResult[] = [];
+  const preview = await progress.step("Previewing unused dependencies", () =>
+    runBrewStep(
+      "Autoremove preview",
+      "brew",
+      ["autoremove", "--dry-run"],
+      true,
+      false,
+    ),
+  );
+  steps.push(preview);
+
+  if (preview.status === "failed") {
+    progress.tick("Skipping autoremove because preview failed");
+    steps.push(
+      skippedStep(
+        "Autoremove apply",
+        "brew autoremove",
+        true,
+        "Skipped because autoremove preview failed.",
+      ),
+    );
+  } else if (dryRun) {
+    progress.tick("Skipping autoremove apply step due to dry-run");
+    steps.push(
+      skippedStep(
+        "Autoremove apply",
+        "brew autoremove",
+        true,
+        "Skipped because dry-run is enabled.",
+      ),
+    );
+  } else {
+    steps.push(
+      await progress.step("Removing unused dependencies", () =>
+        runBrewStep(
+          "Autoremove apply",
+          "brew",
+          ["autoremove"],
+          true,
+          false,
+        ),
+      ),
+    );
+  }
+
+  printBrewSummary("your brew autoremove", steps);
+  if (hasCriticalBrewFailure(steps)) {
+    throw new Error("One or more critical brew autoremove steps failed.");
+  }
+  console.log(chalk.green("Brew autoremove complete."));
+}
+
 export async function brewOptimize(dryRun = false): Promise<void> {
   console.log(chalk.bold("Pre-cleanup doctor pass"));
   await brewDoctor(dryRun);
-  await brewUpgrade(dryRun, false);
+  await brewUpgrade(dryRun, false, false);
   await brewClean(dryRun);
 
   console.log(chalk.bold("Post-cleanup doctor pass"));

@@ -43,7 +43,7 @@ export function printFixPlan(
   }
   if (actions.brewUpgrade) {
     rows.push(
-      `${chalk.green("●")}  ${chalk.bold("Outdated Homebrew")}  ${chalk.dim("→")}  brew upgrade, cleanup, doctor`,
+      `${chalk.green("●")}  ${chalk.bold("Outdated Homebrew")}  ${chalk.dim("→")}  brew update, upgrade, cleanup, doctor`,
     );
   }
 

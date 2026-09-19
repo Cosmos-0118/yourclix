@@ -87,8 +87,14 @@ async function installTarget(
     target.type === "cask" ?
       ["install", "--cask", target.name]
     : ["install", target.name];
+
+  if (effective.dryRun) {
+    spinner.succeed(chalk.yellow(`${prefix} Would install ${target.name}`));
+    await logger.log("info", `${target.type}:${target.name}: would install`);
+    return "success";
+  }
+
   const result = await runCommand("brew", args, {
-    dryRun: effective.dryRun,
     allowFailure: true,
   });
 

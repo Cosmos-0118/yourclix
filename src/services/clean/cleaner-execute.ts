@@ -1,48 +1,30 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import chalk from "chalk";
 import boxen from "boxen";
 import {
   filterToAncestorRoots,
-  pathSizeFast,
+  pathSizesFast,
 } from "../../core/fs-utils.js";
 import { confirm } from "../../core/prompt.js";
 import { CommandProgress } from "../../core/progress.js";
 import { bytesToHuman } from "../../core/format.js";
 import type { CleanerOptions, ScanResult } from "../../core/types.js";
 import { undoManager } from "../../core/undo-manager.js";
+import { getProjectArtifactSkipReason } from "./cleaner-project-guard.js";
 import {
   applyCleanerHeuristics,
+  getCleanerHeuristicSkipReason,
   getCleanerHeuristicPolicy,
   type ValidatedDeletionCandidate,
 } from "./clean-heuristics.js";
 import {
   getSkipReason,
-  isSafetySkipReason,
   printSkippedBreakdown,
   printSkippedSummary,
   summarizeSkippedInline,
   type SkipRecord,
 } from "./cleaner-skip-ui.js";
-
-function buildSafetyOverrideCandidates(
-  safetySkipped: SkipRecord[],
-): ValidatedDeletionCandidate[] {
-  return safetySkipped
-    .filter((entry) => isSafetySkipReason(entry.reason))
-    .map((entry) => {
-      if (!entry.category) {
-        return null;
-      }
-
-      return {
-        path: entry.path,
-        category: entry.category,
-        bytes: entry.bytes ?? 0,
-        mtimeMs: entry.mtimeMs ?? Date.now(),
-      } satisfies ValidatedDeletionCandidate;
-    })
-    .filter((entry): entry is ValidatedDeletionCandidate => entry !== null);
-}
 
 export async function executeCleaner(
   results: ScanResult[],
@@ -58,10 +40,21 @@ export async function executeCleaner(
   }
 
   const rootPaths = filterToAncestorRoots([...pathToCategory.keys()]);
-  const targets = rootPaths.map((targetPath) => ({
-    path: targetPath,
-    category: pathToCategory.get(targetPath)!,
-  }));
+  const normalizedPathToCategory = new Map(
+    [...pathToCategory.entries()].map(([targetPath, category]) => [
+      path.normalize(targetPath),
+      category,
+    ]),
+  );
+  const targets = rootPaths
+    .map((targetPath) => ({
+      path: targetPath,
+      category: normalizedPathToCategory.get(path.normalize(targetPath)),
+    }))
+    .filter(
+      (target): target is { path: string; category: string } =>
+        Boolean(target.category),
+    );
 
   if (!targets.length) {
     return;
@@ -73,22 +66,51 @@ export async function executeCleaner(
   );
 
   const scanProgress = new CommandProgress("Cleanup Preflight", 1);
-  const { candidates, skipped, safetySkipped } = await scanProgress.step(
+  const { candidates, skipped } = await scanProgress.step(
     "Validating target paths",
     async () => {
-      const validCandidates: ValidatedDeletionCandidate[] = [];
+      const validCandidatesWithoutSizes: ValidatedDeletionCandidate[] = [];
       const skippedTargets: SkipRecord[] = [];
 
       for (const target of targets) {
         try {
           const stat = await fs.lstat(target.path);
-          const bytes = await pathSizeFast(target.path);
-          validCandidates.push({
+
+          if (target.category === "Developer Project Junk") {
+            const projectSkipReason = await getProjectArtifactSkipReason(
+              target.path,
+            );
+            if (projectSkipReason) {
+              skippedTargets.push({
+                path: target.path,
+                reason: projectSkipReason,
+                category: target.category,
+                bytes: 0,
+                mtimeMs: stat.mtimeMs,
+              });
+              continue;
+            }
+          }
+
+          const candidateWithoutSize = {
             path: target.path,
             category: target.category,
-            bytes,
+            bytes: 0,
             mtimeMs: stat.mtimeMs,
-          });
+          } satisfies ValidatedDeletionCandidate;
+          const heuristicSkipReason = getCleanerHeuristicSkipReason(
+            candidateWithoutSize,
+            policy,
+          );
+          if (heuristicSkipReason) {
+            skippedTargets.push({
+              ...candidateWithoutSize,
+              reason: heuristicSkipReason,
+            });
+            continue;
+          }
+
+          validCandidatesWithoutSizes.push(candidateWithoutSize);
         } catch (error) {
           skippedTargets.push({
             path: target.path,
@@ -97,69 +119,47 @@ export async function executeCleaner(
         }
       }
 
+      const sizes = await pathSizesFast(
+        validCandidatesWithoutSizes.map((candidate) => candidate.path),
+      );
+      const validCandidates = validCandidatesWithoutSizes.map((candidate) => ({
+        ...candidate,
+        bytes: sizes.get(path.normalize(candidate.path)) ?? 0,
+      }));
       const filtered = applyCleanerHeuristics(validCandidates, policy);
       return {
         candidates: filtered.candidates,
         skipped: [...skippedTargets, ...filtered.skipped],
-        safetySkipped: filtered.skipped,
       };
     },
   );
 
-  let selectedCandidates = candidates;
-  let usedSafetyOverride = false;
-  const overrideCandidates = buildSafetyOverrideCandidates(safetySkipped);
+  const eligibleBytes = candidates.reduce((sum, candidate) => sum + candidate.bytes, 0);
+  console.log(
+    chalk.cyan(
+      `Eligible after safety checks: ${candidates.length} path(s), ${bytesToHuman(eligibleBytes)}`,
+    ),
+  );
 
-  if (!selectedCandidates.length) {
-    if (overrideCandidates.length > 0) {
-      console.log(
-        chalk.yellow(
-          `No paths are eligible under the default safety rules. ` +
-            `${overrideCandidates.length} target(s) matched but were held back only by protected-path or age rules; you can approve an override to delete those.`,
-        ),
-      );
-    } else {
-      console.log(
-        chalk.yellow("No eligible cleanup candidates after safety checks."),
-      );
-    }
+  if (!candidates.length) {
+    console.log(chalk.yellow("No eligible cleanup candidates after safety checks."));
     if (options.verbose) {
       printSkippedBreakdown(skipped);
     } else {
       console.log(chalk.dim(`  ${summarizeSkippedInline(skipped)}`));
     }
-
-    if (overrideCandidates.length === 0) {
-      return;
-    }
-
-    const overrideApproval = await confirm(
-      `Delete ${overrideCandidates.length} path(s) in ${options.mode.toUpperCase()} mode? ` +
-        `This overrides automatic safety blocks (protected paths and retention rules). ` +
-        `Age rule: older than ${policy.olderThanDays} day(s) where applicable.`,
-      Boolean(options.yes),
-    );
-
-    if (!overrideApproval) {
-      console.log(chalk.yellow("Cancelled."));
-      return;
-    }
-
-    selectedCandidates = overrideCandidates;
-    usedSafetyOverride = true;
+    return;
   }
 
-  if (!usedSafetyOverride) {
-    const approved = await confirm(
-      `Delete ${selectedCandidates.length} path(s) in ${options.mode.toUpperCase()} mode? ` +
-        `(risky paths must be older than ${policy.olderThanDays} day(s))`,
-      Boolean(options.yes),
-    );
+  const approved = await confirm(
+    `Move ${candidates.length} path(s) to the undo backup in ${options.mode.toUpperCase()} mode? ` +
+      `(risky paths must be older than ${policy.olderThanDays} day(s))`,
+    Boolean(options.yes),
+  );
 
-    if (!approved) {
-      console.log(chalk.yellow("Cancelled."));
-      return;
-    }
+  if (!approved) {
+    console.log(chalk.yellow("Cancelled."));
+    return;
   }
 
   const progress = new CommandProgress("Cleanup Execution", 1);
@@ -168,12 +168,12 @@ export async function executeCleaner(
   let backupId: string | null = null;
   let backupWarnings: string[] = [];
 
-  await progress.step(`Removing ${selectedCandidates.length} valid paths`, async () => {
+  await progress.step(`Moving ${candidates.length} valid paths to undo backup`, async () => {
     if (options.dryRun) {
-      deletedCount = selectedCandidates.length;
-      reclaimedBytes = selectedCandidates.reduce((sum, c) => sum + c.bytes, 0);
+      deletedCount = candidates.length;
+      reclaimedBytes = candidates.reduce((sum, c) => sum + c.bytes, 0);
     } else {
-      const candidatePaths = selectedCandidates.map((c) => c.path);
+      const candidatePaths = candidates.map((c) => c.path);
       const { metadata, warnings } = await undoManager.createBackup(
         candidatePaths,
         "clean",
@@ -187,8 +187,8 @@ export async function executeCleaner(
   });
 
   const skippedCount = skipped.length;
-  const actionWord = options.dryRun ? "Would remove" : "Removed";
-  const reclaimedLabel = options.dryRun ? "Potential reclaim" : "Reclaimed";
+  const actionWord = options.dryRun ? "Would remove" : "Moved to undo backup";
+  const reclaimedLabel = options.dryRun ? "Potential reclaim" : "Backup size";
 
   const summaryBody = [
     chalk.bold.white(`${actionWord}: ${deletedCount} path(s)`),
@@ -199,6 +199,12 @@ export async function executeCleaner(
     "",
     chalk.cyan.bold(`${reclaimedLabel}: ${bytesToHuman(reclaimedBytes)}`),
   ];
+
+  if (!options.dryRun && backupId) {
+    summaryBody.push(
+      chalk.yellow("Disk space is not freed until this undo backup is pruned."),
+    );
+  }
 
   if (backupId && !options.dryRun) {
     summaryBody.push(

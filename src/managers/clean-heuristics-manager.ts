@@ -45,7 +45,11 @@ export function buildCleanerHeuristicPolicy(
 ): CleanerHeuristicPolicy {
   const home = os.homedir();
   const protectedPaths = [
-    process.cwd(),
+    // Protect the CLI's live dependency tree while it is running, but do not
+    // treat the user's entire current project as untouchable. The old cwd
+    // entry made `your clean` effectively a no-op whenever it was launched
+    // from a developer repository.
+    path.join(process.cwd(), "node_modules"),
     path.join(home, ".vscode/extensions"),
     path.join(home, ".cursor/extensions"),
     path.join(home, "Library/Application Support/Code/User"),

@@ -81,9 +81,16 @@ _your() {
           ;;
         brew)
           if (( CURRENT == 3 )); then
-            _values 'brew command' 'doctor[Run brew doctor]' 'clean[Cleanup brew cache]' 'upgrade[Upgrade brew packages]' 'optimize[Run doctor + upgrade + clean]'
+            _values 'brew command' 'status[Show brew status]' 'doctor[Run brew doctor]' 'clean[Cleanup brew cache]' 'autoremove[Remove unused dependencies]' 'upgrade[Upgrade brew packages]' 'optimize[Run doctor + upgrade + clean]'
           else
-            _arguments '--dry-run[Preview only]'
+            case "\${words[3]}" in
+              upgrade)
+                _arguments '--dry-run[Preview only]' '--verbose[Show complete brew output]' '--greedy[Include latest/auto-updating casks]'
+                ;;
+              status|doctor|clean|autoremove|optimize)
+                _arguments '--dry-run[Preview only]' '-y[Skip confirmation]' '--yes[Skip confirmation]'
+                ;;
+            esac
           fi
           ;;
         doctor)

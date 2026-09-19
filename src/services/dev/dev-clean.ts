@@ -1,11 +1,11 @@
 import os from "node:os";
 import path from "node:path";
 import chalk from "chalk";
-import { runCommand } from "../../core/exec.js";
 import { CommandProgress } from "../../core/progress.js";
 import { bytesToHuman } from "../../core/format.js";
-import { pathSizeFast, removePath } from "../../core/fs-utils.js";
+import { pathSizeFast } from "../../core/fs-utils.js";
 import { confirm } from "../../core/prompt.js";
+import { undoManager } from "../../core/undo-manager.js";
 import { DEV_CLEAN_MAX_TARGETS } from "./constants.js";
 import {
   filterProtectedDevCleanupTargets,
@@ -14,7 +14,7 @@ import {
 import type { CleanupTargetInfo } from "./types.js";
 
 export async function devClean(dryRun = false, yes = false): Promise<void> {
-  const progress = new CommandProgress("Developer Cleanup", 3);
+  const progress = new CommandProgress("Developer Cleanup", 2);
   const home = os.homedir();
   const found = await progress.step("Scanning cleanup targets", async () =>
     scanDevCleanupTargets(home),
@@ -84,7 +84,10 @@ export async function devClean(dryRun = false, yes = false): Promise<void> {
   if (otherTargets.length > 0) {
     console.log(`- Other: ${otherTargets.length} (${bytesToHuman(otherBytes)})`);
   }
-  console.log(chalk.cyan(`Estimated reclaimable: ${bytesToHuman(totalBytes)}`));
+  console.log(chalk.cyan(`Discovered size: ${bytesToHuman(totalBytes)}`));
+  if (!dryRun) {
+    console.log(chalk.dim("Disk space remains in the undo backup until it is pruned."));
+  }
 
   const largestTargets = [...targetInfos]
     .sort((a, b) => b.bytes - a.bytes)
@@ -110,6 +113,11 @@ export async function devClean(dryRun = false, yes = false): Promise<void> {
     );
   }
 
+  if (targetInfos.length === 0) {
+    console.log(chalk.green("No developer cleanup targets found."));
+    return;
+  }
+
   const approved = await confirm("Proceed with developer cleanup?", yes);
   if (!approved) {
     console.log(chalk.yellow("Cancelled by user."));
@@ -118,53 +126,49 @@ export async function devClean(dryRun = false, yes = false): Promise<void> {
 
   let removedCount = 0;
   let reclaimedBytes = 0;
-  const failedTargets: Array<{ path: string; reason: string }> = [];
+  let backupId: string | null = null;
+  let backupWarnings: string[] = [];
   await progress.step(
-    `Removing ${targetInfos.length} filesystem targets`,
+    `Moving ${targetInfos.length} filesystem targets to undo backup`,
     async () => {
-      for (const target of targetInfos) {
-        try {
-          await removePath(target.path, dryRun);
-          removedCount += 1;
-          reclaimedBytes += target.bytes;
-        } catch (error) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          failedTargets.push({ path: target.path, reason: message || "unknown" });
-        }
+      if (dryRun) {
+        removedCount = targetInfos.length;
+        reclaimedBytes = totalBytes;
+        return;
       }
+
+      const result = await undoManager.createBackup(
+        targetInfos.map((target) => target.path),
+        "dev-clean",
+      );
+      backupId = result.metadata.id;
+      removedCount = result.metadata.filesCount;
+      reclaimedBytes = result.metadata.byteSize;
+      backupWarnings = result.warnings;
     },
   );
 
-  await progress.step("Cleaning package manager caches", async () => {
-    await runCommand("npm", ["cache", "clean", "--force"], {
-      dryRun,
-      allowFailure: true,
-    });
-    await runCommand("pnpm", ["store", "prune"], {
-      dryRun,
-      allowFailure: true,
-    });
-    await runCommand("python3", ["-m", "pip", "cache", "purge"], {
-      dryRun,
-      allowFailure: true,
-    });
-    await runCommand("gradle", ["--stop"], { dryRun, allowFailure: true });
-  });
-
-  const actionWord = dryRun ? "Would remove" : "Removed";
+  const actionWord = dryRun ? "Would remove" : "Moved to undo backup";
   console.log(chalk.bold("Developer cleanup summary"));
   console.log(chalk.green(`- ${actionWord}: ${removedCount} targets`));
   console.log(
-    chalk.cyan(`- ${dryRun ? "Potential reclaim" : "Reclaimed"}: ${bytesToHuman(reclaimedBytes)}`),
+    chalk.cyan(`- ${dryRun ? "Potential reclaim" : "Backup size"}: ${bytesToHuman(reclaimedBytes)}`),
   );
-  console.log(chalk.yellow(`- Failed: ${failedTargets.length} targets`));
+  if (!dryRun && backupId) {
+    console.log(
+      chalk.yellow("- Disk space is not freed until the undo backup is pruned."),
+    );
+    console.log(chalk.green(`- Backup: ~/.your-backups/${backupId}`));
+    console.log(chalk.dim(`- Undo: your undo restore ${backupId}`));
+  }
 
-  if (failedTargets.length > 0) {
-    const sampleFailed = failedTargets.slice(0, 10);
-    console.log(chalk.dim("Sample failures"));
-    for (const failed of sampleFailed) {
-      console.log(chalk.dim(`- ${failed.path} (${failed.reason})`));
+  if (backupWarnings.length > 0) {
+    console.log(chalk.yellow("Backup warnings:"));
+    for (const warning of backupWarnings.slice(0, 10)) {
+      console.log(chalk.dim(`- ${warning}`));
+    }
+    if (backupWarnings.length > 10) {
+      console.log(chalk.dim(`...and ${backupWarnings.length - 10} more warning(s).`));
     }
   }
 

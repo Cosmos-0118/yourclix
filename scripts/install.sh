@@ -10,6 +10,7 @@ SOURCE_DIR="${YOUR_SOURCE_DIR:-$INSTALL_HOME/source}"
 # User-level global installs without touching ~/.npmrc `prefix` (avoids nvm conflict & zsh init warnings).
 GLOBAL_NPM_PREFIX="${YOUR_GLOBAL_NPM_PREFIX:-$HOME/.npm-global}"
 export GLOBAL_NPM_PREFIX
+YOUR_BREW_BIN=""
 
 # ── terminal styling (disabled when not a TTY or NO_COLOR is set) ─────────────
 if [[ -z "${NO_COLOR:-}" ]] && [[ -t 1 ]]; then
@@ -39,21 +40,78 @@ ok() { printf '%s %s\n' "${_grn}✓${_rst}" "$*"; }
 warn() { printf '%s %s\n' "${_ylw}!${_rst}" "$*" >&2; }
 note() { printf '%s\n' "${_dim}$*${_rst}"; }
 
-ensure_homebrew() {
+find_homebrew() {
+  local candidate
+
   if command -v brew >/dev/null 2>&1; then
-    ok "Homebrew present"
-    return
+    candidate="$(command -v brew)"
+    if [[ -x "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  fi
+
+  for candidate in \
+    /opt/homebrew/bin/brew \
+    /usr/local/bin/brew \
+    /home/linuxbrew/.linuxbrew/bin/brew; do
+    if [[ -x "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+use_homebrew() {
+  local brew_bin="$1"
+  local shellenv
+
+  if ! shellenv="$("$brew_bin" shellenv 2>/dev/null)"; then
+    warn "Homebrew was found at ${brew_bin}, but 'brew shellenv' failed."
+    return 1
+  fi
+
+  eval "$shellenv"
+  YOUR_BREW_BIN="$(command -v brew 2>/dev/null || printf '%s' "$brew_bin")"
+  if ! "$YOUR_BREW_BIN" --version >/dev/null 2>&1; then
+    warn "Homebrew was found but could not be executed."
+    return 1
+  fi
+}
+
+ensure_homebrew() {
+  local brew_bin
+
+  if brew_bin="$(find_homebrew)"; then
+    if use_homebrew "$brew_bin"; then
+      ok "Homebrew present ($YOUR_BREW_BIN)"
+      return
+    fi
+
+    return 1
+  fi
+
+  if ! command -v curl >/dev/null 2>&1; then
+    warn "curl is required to install Homebrew."
+    return 1
   fi
 
   step "Installing Homebrew"
-  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-  if [[ -x /opt/homebrew/bin/brew ]]; then
-    eval "$(/opt/homebrew/bin/brew shellenv)"
-  elif [[ -x /usr/local/bin/brew ]]; then
-    eval "$(/usr/local/bin/brew shellenv)"
+  if ! curl --fail --silent --show-error --location \
+    --proto '=https' --tlsv1.2 \
+    https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | /bin/bash; then
+    warn "Homebrew installer failed."
+    return 1
   fi
-  ok "Homebrew installed"
+
+  if ! brew_bin="$(find_homebrew)" || ! use_homebrew "$brew_bin"; then
+    warn "Homebrew installer completed, but no working brew executable was found."
+    return 1
+  fi
+
+  ok "Homebrew installed ($YOUR_BREW_BIN)"
 }
 
 ensure_node() {
@@ -63,7 +121,13 @@ ensure_node() {
   fi
 
   step "Installing Node.js (Homebrew)"
-  brew install node
+  "$YOUR_BREW_BIN" install node
+
+  if ! command -v node >/dev/null 2>&1; then
+    warn "Homebrew install completed, but node is not on PATH."
+    return 1
+  fi
+
   ok "Node.js installed"
 }
 

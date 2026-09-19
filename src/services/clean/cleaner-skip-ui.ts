@@ -5,8 +5,6 @@ import type { HeuristicSkipRecord } from "./clean-heuristics.js";
 
 export type SkipRecord = HeuristicSkipRecord;
 
-const SAFETY_SKIP_REASONS = ["protected-path", "newer-than-"];
-
 export function getSkipReason(error: unknown): string {
   const err = error as NodeJS.ErrnoException;
   if (!err || typeof err !== "object") {
@@ -185,9 +183,17 @@ function formatSkipReasonShort(reason: string): string {
     return "not found";
   }
 
-  return reason;
-}
+  if (reason === "tracked-project-artifact") {
+    return "tracked project files";
+  }
 
-export function isSafetySkipReason(reason: string): boolean {
-  return SAFETY_SKIP_REASONS.some((prefix) => reason.startsWith(prefix));
+  if (reason === "git-check-failed") {
+    return "Git check failed";
+  }
+
+  if (reason === "project-boundary") {
+    return "project boundary";
+  }
+
+  return reason;
 }

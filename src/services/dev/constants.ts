@@ -7,6 +7,11 @@ export const DEV_CLEAN_PROJECT_ROOTS = [
   "Projects",
   "Code",
   "Work",
+  "GitHub",
+  "dev",
+  "Repos",
+  "workspace",
+  "Workspaces",
   "Desktop",
   "Downloads",
 ];

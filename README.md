@@ -35,8 +35,9 @@ your net fix [--dry-run]
 your net reset [--dry-run] [-y]
 your spotlight status
 your spotlight reset [--path /target] [--dry-run]
-your brew doctor|clean|optimize [--dry-run]
-your brew upgrade [--dry-run] [--verbose]
+your brew status
+your brew doctor|clean|autoremove|optimize [--dry-run]
+your brew upgrade [--dry-run] [--verbose] [--greedy]
 your doctor
 your fix [--dry-run] [-y]
 your dev clean [--dry-run] [-y]
@@ -55,6 +56,12 @@ your backup list [--limit 100]
 your backup remove <name> [--dry-run] [-y]
 your backup prune [--days 30] [--dry-run] [-y]
 ```
+
+Homebrew maintenance is preview-first: `upgrade` refreshes metadata before
+discovering targets, `clean` and `autoremove` preview before applying changes,
+and failures in package discovery or cleanup stop the workflow. Use
+`your brew status` for a read-only health/freshness report and `--greedy` when
+you explicitly want casks with automatic or latest-version updates included.
 
 ## Autocomplete Assistant
 
@@ -77,6 +84,11 @@ source ~/.zshrc
 - Safe by default.
 - Global `--dry-run` on destructive operations.
 - Confirmation prompts for risky deletions and resets.
+- Cleanup scans report discovered bytes first, then show the smaller set that
+  passes retention and safety checks; protected paths are never overrideable.
+- `your clean` and `your dev clean` move selected paths into the undo backup.
+  They do not free disk space until that backup is pruned with `your backup
+  prune`.
 - Network reset creates backups before removing plist files.
 
 ## Architecture

@@ -55,6 +55,74 @@ export async function pathSizeFast(targetPath: string): Promise<number> {
   return pathSize(targetPath);
 }
 
+/** Measure independent roots with a bounded number of `du` processes. */
+export async function pathSizesFast(
+  paths: string[],
+  batchSize = 128,
+): Promise<Map<string, number>> {
+  const deduped = filterToAncestorRoots(paths);
+  const sizes = new Map<string, number>();
+  const safeBatchSize = Math.max(1, Math.floor(batchSize));
+
+  for (let i = 0; i < deduped.length; i += safeBatchSize) {
+    const batch = deduped.slice(i, i + safeBatchSize);
+    const directories: string[] = [];
+
+    await Promise.all(
+      batch.map(async (targetPath) => {
+        const normalized = path.normalize(targetPath);
+        try {
+          const stats = await fs.lstat(targetPath);
+          if (stats.isDirectory()) {
+            directories.push(targetPath);
+          } else {
+            sizes.set(normalized, stats.size);
+          }
+        } catch {
+          sizes.set(normalized, await pathSizeFast(targetPath));
+        }
+      }),
+    );
+
+    if (directories.length === 0) {
+      continue;
+    }
+
+    const result = await runCommand("du", ["-sk", ...directories], {
+      allowFailure: true,
+    });
+
+    if (result.code === 0 && result.stdout.trim()) {
+      for (const line of result.stdout.split(/\r?\n/)) {
+        const separator = line.search(/\s/);
+        if (separator < 0) {
+          continue;
+        }
+
+        const kiloBytes = Number.parseInt(line.slice(0, separator), 10);
+        const reportedPath = line.slice(separator).trim();
+        if (
+          Number.isFinite(kiloBytes) &&
+          kiloBytes >= 0 &&
+          reportedPath.length > 0
+        ) {
+          sizes.set(path.normalize(reportedPath), kiloBytes * 1024);
+        }
+      }
+    }
+
+    // Preserve the recursive fallback for paths that `du` could not measure.
+    for (const targetPath of directories) {
+      const normalized = path.normalize(targetPath);
+      if (!sizes.has(normalized)) {
+        sizes.set(normalized, await pathSizeFast(targetPath));
+      }
+    }
+  }
+
+  return sizes;
+}
+
 export async function sumPathSizesFast(
   paths: string[],
   concurrency = 12,
@@ -64,14 +132,11 @@ export async function sumPathSizesFast(
     return 0;
   }
 
-  let total = 0;
-  for (let i = 0; i < deduped.length; i += concurrency) {
-    const batch = deduped.slice(i, i + concurrency);
-    const sizes = await Promise.all(batch.map((p) => pathSizeFast(p)));
-    total += sizes.reduce((sum, n) => sum + n, 0);
-  }
-
-  return total;
+  const sizes = await pathSizesFast(deduped, Math.max(64, concurrency * 8));
+  return deduped.reduce(
+    (total, targetPath) => total + (sizes.get(path.normalize(targetPath)) ?? 0),
+    0,
+  );
 }
 
 export function expandHome(targetPath: string): string {
@@ -110,4 +175,3 @@ export async function removePathWithBackup(
   // In actual operation, backup happens at operation level (clean, etc)
   await removePath(targetPath, false);
 }
-

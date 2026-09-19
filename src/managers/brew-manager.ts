@@ -20,13 +20,27 @@ export interface BrewStepResult {
   details: string[];
 }
 
-interface OutdatedPackages {
+export interface OutdatedPackages {
   formulae: string[];
   casks: string[];
+  /** False means Homebrew could not be queried reliably. */
+  ok: boolean;
+  error?: string;
+}
+
+function shellQuote(value: string): string {
+  return /^[A-Za-z0-9_./:@+=,-]+$/.test(value) ?
+      value
+    : `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 function commandLine(command: string, args: string[]): string {
-  return `${command} ${args.join(" ")}`.trim();
+  return [command, ...args].map(shellQuote).join(" ").trim();
+}
+
+function compactOutput(output: string, maxLength = 320): string {
+  const compact = output.replace(/\s+/g, " ").trim();
+  return compact.length > maxLength ? `${compact.slice(0, maxLength - 1)}…` : compact;
 }
 
 export function printBrewSummary(title: string, steps: BrewStepResult[]): void {
@@ -37,10 +51,15 @@ export function printBrewSummary(title: string, steps: BrewStepResult[]): void {
       : step.status === "failed" ? chalk.red.bold("NO ")
       : chalk.dim("— ");
 
+    const detailLines = step.details
+      .flatMap((detail) => detail.split(/\r?\n/))
+      .map((detail) => detail.trim())
+      .filter(Boolean)
+      .slice(0, 3);
     const lines = [
       `${marker}${chalk.white(step.name)}`,
       chalk.dim(`    ${step.command}`),
-      ...step.details.slice(0, 3).map((d) => {
+      ...detailLines.map((d) => {
         const one =
           d.length > 140 ? `${d.slice(0, 137)}…` : d;
         return chalk.dim(`    · ${one}`);
@@ -125,13 +144,23 @@ export function printCleanupResult(output: string, dryRun: boolean): void {
   }
 }
 
-/** Env helps brew/git print color + avoid pager stalls when streaming. */
-const BREW_STREAM_ENV: NodeJS.ProcessEnv = {
-  HOMEBREW_COLOR: "1",
+/** Shared non-interactive defaults for every Homebrew subprocess. */
+const BREW_ENV: NodeJS.ProcessEnv = {
   GIT_TERMINAL_PROMPT: "0",
   PAGER: "cat",
-  /** Fewer “Hide this hint with HOMEBREW_…” footer lines at the end of installs. */
   HOMEBREW_NO_ENV_HINTS: "1",
+};
+
+/** Environment for read-only inventory calls. Never let them silently update taps. */
+const BREW_QUERY_ENV: NodeJS.ProcessEnv = {
+  ...BREW_ENV,
+  HOMEBREW_NO_AUTO_UPDATE: "1",
+};
+
+/** Env helps brew/git print color + avoid pager stalls when streaming. */
+const BREW_STREAM_ENV: NodeJS.ProcessEnv = {
+  ...BREW_ENV,
+  HOMEBREW_COLOR: "1",
 };
 
 export interface BrewStreamOptions {
@@ -139,6 +168,8 @@ export interface BrewStreamOptions {
   heartbeatMs?: number;
   /** Full brew stdout/stderr (every ln/rm/pour line). Default: filtered, calm output. */
   verbose?: boolean;
+  /** Additional Homebrew environment overrides for a specific operation. */
+  env?: NodeJS.ProcessEnv;
 }
 
 /** Low-value pour/link noise Homebrew prints during bottles/cleanup. */
@@ -181,10 +212,10 @@ export function suppressBrewPourNoise(
   if (/^\s*touch\s/.test(line)) {
     return true;
   }
-  if (/^Hide these hints with/.test(t)) {
+  if (/^Hide these hints with/i.test(t)) {
     return true;
   }
-  if (/^Disable this behaviour by setting/.test(t)) {
+  if (/^Disable this behaviour by setting/i.test(t)) {
     return true;
   }
   return false;
@@ -231,15 +262,19 @@ export async function runBrewStep(
     useStream ?
       await runCommandFilteredStream(command, args, {
         allowFailure: true,
-        env: BREW_STREAM_ENV,
+        env: { ...BREW_STREAM_ENV, ...(streamOpts?.env ?? {}) },
         heartbeatMs: streamOpts?.heartbeatMs,
         suppressLine: fullVerbose ? undefined : suppressBrewPourNoise,
         formatLine: fullVerbose ? undefined : formatBrewStreamLine,
       })
     : await runCommand(command, args, {
-        dryRun,
-        allowFailure: true,
-      });
+      dryRun,
+      allowFailure: true,
+      env: {
+        ...(dryRun ? BREW_QUERY_ENV : BREW_ENV),
+        ...(streamOpts?.env ?? {}),
+      },
+    });
 
   let detail: string;
   if (useStream) {
@@ -283,30 +318,90 @@ export async function runBrewStep(
   };
 }
 
-/** brew outdated JSON v2 — single fast pass, no tap auto-update. */
 interface BrewOutdatedJsonV2 {
-  formulae?: Array<{ name: string }>;
-  casks?: Array<{ name: string }>;
+  formulae?: unknown;
+  casks?: unknown;
 }
 
-export async function getOutdatedPackages(): Promise<OutdatedPackages> {
-  const result = await runCommand("brew", ["outdated", "--json=v2"], {
-    allowFailure: true,
-    env: { HOMEBREW_NO_AUTO_UPDATE: "1" },
-  });
+function packageNames(value: unknown, field: "formulae" | "casks"): string[] {
+  if (value === undefined) {
+    return [];
+  }
 
-  if (result.code !== 0 || !result.stdout.trim()) {
-    return { formulae: [], casks: [] };
+  if (!Array.isArray(value)) {
+    throw new Error(`Homebrew returned an invalid ${field} list.`);
+  }
+
+  return [...new Set(
+    value
+      .map((entry) =>
+        typeof entry === "object" && entry !== null && "name" in entry &&
+          typeof entry.name === "string" ? entry.name : "",
+      )
+      .map((name) => name.trim())
+      .filter(Boolean),
+  )].sort();
+}
+
+export function parseBrewOutdatedJson(output: string): Pick<OutdatedPackages, "formulae" | "casks"> {
+  const parsed = JSON.parse(output) as BrewOutdatedJsonV2;
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("Homebrew returned an unexpected outdated-package shape.");
+  }
+
+  return {
+    formulae: packageNames(parsed.formulae, "formulae"),
+    casks: packageNames(parsed.casks, "casks"),
+  };
+}
+
+export interface OutdatedPackageOptions {
+  /** Include casks with :latest or auto_updates true. */
+  greedy?: boolean;
+}
+
+export async function getOutdatedPackages(
+  options: OutdatedPackageOptions = {},
+): Promise<OutdatedPackages> {
+  const result = await runCommand(
+    "brew",
+    ["outdated", "--json=v2", ...(options.greedy ? ["--greedy"] : [])],
+    {
+    allowFailure: true,
+      env: BREW_QUERY_ENV,
+    },
+  );
+
+  if (result.code !== 0) {
+    return {
+      formulae: [],
+      casks: [],
+      ok: false,
+      error: compactOutput(
+        result.stderr || result.stdout || `brew outdated exited with code ${result.code}`,
+      ),
+    };
+  }
+
+  if (!result.stdout.trim()) {
+    return {
+      formulae: [],
+      casks: [],
+      ok: false,
+      error: "brew outdated returned no JSON output.",
+    };
   }
 
   try {
-    const data = JSON.parse(result.stdout) as BrewOutdatedJsonV2;
-    const formulae = (data.formulae ?? [])
-      .map((f) => f.name)
-      .filter(Boolean);
-    const casks = (data.casks ?? []).map((c) => c.name).filter(Boolean);
-    return { formulae, casks };
-  } catch {
-    return { formulae: [], casks: [] };
+    return { ...parseBrewOutdatedJson(result.stdout), ok: true };
+  } catch (error) {
+    return {
+      formulae: [],
+      casks: [],
+      ok: false,
+      error: compactOutput(
+        error instanceof Error ? error.message : "Could not parse brew outdated JSON.",
+      ),
+    };
   }
 }

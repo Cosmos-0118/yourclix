@@ -120,12 +120,29 @@ class UndoManager {
     }
 
     const timestamp = Date.now();
-    const id = `undo-${new Date(timestamp).toISOString().split("T")[0]}-${String(timestamp).slice(-5)}`;
-    const backupDir = path.join(BACKUPS_DIR, id);
+    const baseId = `undo-${new Date(timestamp).toISOString().split("T")[0]}-${timestamp}`;
+    let id = baseId;
     const warnings: string[] = [];
 
     try {
-      await fs.mkdir(backupDir, { recursive: true });
+      // Two clean operations can start in the same millisecond. Never reuse
+      // an existing backup directory: rename() would otherwise overwrite an
+      // item from the earlier backup and make recovery incomplete.
+      for (let attempt = 0; ; attempt += 1) {
+        id = attempt === 0 ? baseId : `${baseId}-${attempt}`;
+        const candidateDir = path.join(BACKUPS_DIR, id);
+        try {
+          await fs.mkdir(candidateDir, { recursive: false });
+          break;
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code !== "EEXIST") {
+            throw error;
+          }
+        }
+      }
+
+      const allocatedBackupDir = path.join(BACKUPS_DIR, id);
 
       let totalBytes = 0;
       let successCount = 0;
@@ -138,7 +155,7 @@ class UndoManager {
           const itemBytes = await pathSizeFast(filePath);
           const resolved = path.resolve(filePath);
           const { backupPath, manifestKey } = resolveBackupDestination(
-            backupDir,
+            allocatedBackupDir,
             homeDir,
             filePath,
           );
@@ -159,7 +176,7 @@ class UndoManager {
 
       if (Object.keys(outsideManifest).length > 0) {
         await fs.writeFile(
-          path.join(backupDir, OUTSIDE_HOME_MANIFEST),
+          path.join(allocatedBackupDir, OUTSIDE_HOME_MANIFEST),
           JSON.stringify(outsideManifest, null, 2),
           "utf-8",
         );
@@ -201,6 +218,28 @@ class UndoManager {
       let restoredCount = 0;
       const homeDir = os.homedir();
       const manifestPath = path.join(backupDir, OUTSIDE_HOME_MANIFEST);
+      const moveWithoutOverwrite = async (
+        from: string,
+        to: string,
+      ): Promise<void> => {
+        let destinationExists = false;
+        try {
+          await fs.lstat(to);
+          destinationExists = true;
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code !== "ENOENT") {
+            throw error;
+          }
+        }
+
+        if (destinationExists) {
+          throw new Error(`destination already exists: ${to}`);
+        }
+
+        await fs.mkdir(path.dirname(to), { recursive: true });
+        await fs.rename(from, to);
+      };
 
       try {
         const raw = await fs.readFile(manifestPath, "utf-8");
@@ -209,8 +248,7 @@ class UndoManager {
           const from = path.join(backupDir, "_abs", id);
           try {
             await fs.lstat(from);
-            await fs.mkdir(path.dirname(originalAbs), { recursive: true });
-            await fs.rename(from, originalAbs);
+            await moveWithoutOverwrite(from, originalAbs);
             restoredCount += 1;
           } catch (error) {
             console.error(
@@ -243,8 +281,7 @@ class UndoManager {
             await restoreHomeMirror(fullPath);
           } else {
             const targetPath = path.join(homeDir, relativePath);
-            await fs.mkdir(path.dirname(targetPath), { recursive: true });
-            await fs.rename(fullPath, targetPath);
+            await moveWithoutOverwrite(fullPath, targetPath);
             restoredCount += 1;
           }
         }

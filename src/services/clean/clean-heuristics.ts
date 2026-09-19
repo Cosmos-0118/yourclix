@@ -76,26 +76,14 @@ export function applyCleanerHeuristics(
 ): HeuristicFilterResult {
   const kept: ValidatedDeletionCandidate[] = [];
   const skipped: HeuristicSkipRecord[] = [];
-  const minAgeMs = policy.olderThanDays * 24 * 60 * 60 * 1000;
   const now = Date.now();
 
   for (const candidate of candidates) {
-    if (isProtectedCleanupPath(candidate.path, policy.protectedPaths)) {
+    const reason = getCleanerHeuristicSkipReason(candidate, policy, now);
+    if (reason) {
       skipped.push({
         path: candidate.path,
-        reason: "protected-path",
-        category: candidate.category,
-        bytes: candidate.bytes,
-        mtimeMs: candidate.mtimeMs,
-      });
-      continue;
-    }
-
-    const ageGateEnabled = policy.ageGatedCategories.has(candidate.category);
-    if (ageGateEnabled && now - candidate.mtimeMs < minAgeMs) {
-      skipped.push({
-        path: candidate.path,
-        reason: `newer-than-${policy.olderThanDays}d`,
+        reason,
         category: candidate.category,
         bytes: candidate.bytes,
         mtimeMs: candidate.mtimeMs,
@@ -107,4 +95,24 @@ export function applyCleanerHeuristics(
   }
 
   return { candidates: kept, skipped };
+}
+
+export function getCleanerHeuristicSkipReason(
+  candidate: Pick<ValidatedDeletionCandidate, "path" | "category" | "mtimeMs">,
+  policy: CleanerHeuristicPolicy,
+  now = Date.now(),
+): string | null {
+  if (isProtectedCleanupPath(candidate.path, policy.protectedPaths)) {
+    return "protected-path";
+  }
+
+  const minAgeMs = policy.olderThanDays * 24 * 60 * 60 * 1000;
+  if (
+    policy.ageGatedCategories.has(candidate.category) &&
+    now - candidate.mtimeMs < minAgeMs
+  ) {
+    return `newer-than-${policy.olderThanDays}d`;
+  }
+
+  return null;
 }

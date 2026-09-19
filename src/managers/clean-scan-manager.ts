@@ -13,28 +13,28 @@ function join(home: string, target: string): string {
   return path.join(home, target);
 }
 
-/** Paths outside the home volume often cannot be moved into ~/.your-backups (EPERM, cross-volume). */
-function isUnderHome(resolvedPath: string, home: string): boolean {
-  const candidate = path.resolve(resolvedPath);
-  const root = path.resolve(home);
-  return candidate === root || candidate.startsWith(`${root}${path.sep}`);
+/** Only scan OS-managed temporary roots, never an arbitrary TMPDIR such as /. */
+function isTrustedTemporaryRoot(tmpDir: string): boolean {
+  const resolved = path.resolve(tmpDir);
+  return (
+    resolved === "/tmp" ||
+    resolved === "/private/tmp" ||
+    resolved.startsWith("/var/folders/")
+  );
 }
 
-/** macOS TMPDIR is usually /var/folders/…/T — not user-undoable; only include when it lives under ~. */
-function userTmpStarGlob(home: string): string | undefined {
+/** macOS TMPDIR is usually /var/folders/…/T and is supported by undo backups. */
+function userTmpStarGlob(): string | undefined {
   const tmpDir = process.env.TMPDIR ?? "/tmp";
-  if (!isUnderHome(path.resolve(tmpDir), home)) {
+  if (!isTrustedTemporaryRoot(tmpDir)) {
     return undefined;
   }
   return path.join(tmpDir, "*");
 }
 
-function userQuickLookThumbGlob(home: string): string | undefined {
+function userQuickLookThumbGlob(): string | undefined {
   const tmpDir = process.env.TMPDIR ?? "/tmp";
-  const qlBase = path.resolve(
-    path.join(tmpDir, "..", "C", "com.apple.QuickLook.thumbnailcache"),
-  );
-  if (!isUnderHome(qlBase, home)) {
+  if (!isTrustedTemporaryRoot(tmpDir)) {
     return undefined;
   }
   return path.join(tmpDir, "..", "C", "com.apple.QuickLook.thumbnailcache/*");
@@ -45,6 +45,11 @@ const projectRoots = [
   "Projects",
   "Code",
   "Work",
+  "GitHub",
+  "dev",
+  "Repos",
+  "workspace",
+  "Workspaces",
   "Desktop",
   "Downloads",
 ];
@@ -68,8 +73,8 @@ function filterByRunLevel(
 
 export function getCleanerScanCategories(mode: RunLevel): ScanCategory[] {
   const home = os.homedir();
-  const tmpStar = userTmpStarGlob(home);
-  const quickLookGlob = userQuickLookThumbGlob(home);
+  const tmpStar = userTmpStarGlob();
+  const quickLookGlob = userQuickLookThumbGlob();
 
   const categories: ScanCategory[] = [
     {
@@ -102,10 +107,6 @@ export function getCleanerScanCategories(mode: RunLevel): ScanCategory[] {
       category: "Browser Caches",
       risky: false,
       globs: [
-        join(home, "Library/Caches/Google/Chrome/*"),
-        join(home, "Library/Caches/BraveSoftware/Brave-Browser/*"),
-        join(home, "Library/Caches/com.microsoft.edgemac/*"),
-        join(home, "Library/Caches/Mozilla/Firefox/*"),
         join(home, "Library/Application Support/Google/Chrome/Default/Cache/*"),
         join(
           home,
@@ -148,7 +149,6 @@ export function getCleanerScanCategories(mode: RunLevel): ScanCategory[] {
           home,
           "Library/Application Support/Firefox/Profiles/*/thumbnails/*",
         ),
-        join(home, "Library/Caches/com.apple.Safari/*"),
         join(home, "Library/Safari/Favicon Cache/*"),
       ],
     },
@@ -235,14 +235,12 @@ export function getCleanerScanCategories(mode: RunLevel): ScanCategory[] {
         join(home, "Library/Application Support/JetBrains/*/caches/*"),
         join(home, "Library/Application Support/JetBrains/*/index/*"),
         join(home, "Library/Caches/JetBrains/*"),
-        join(home, "Library/Caches/com.microsoft.VSCode/*"),
       ],
     },
     {
       category: "Package Manager Artifacts",
       risky: false,
       globs: [
-        join(home, "Library/Caches/Homebrew/*"),
         join(home, "Library/Logs/Homebrew/*"),
         join(home, ".cache/Homebrew/*"),
         join(home, "Library/Caches/composer/*"),
@@ -287,7 +285,6 @@ export function getCleanerScanCategories(mode: RunLevel): ScanCategory[] {
       risky: false,
       globs: [
         join(home, "Library/Caches/com.apple.Spotlight/*"),
-        join(home, "Library/Caches/com.apple.quicklook.thumbnailcache/*"),
       ],
     },
     {
@@ -298,6 +295,11 @@ export function getCleanerScanCategories(mode: RunLevel): ScanCategory[] {
           join(home, `${root}/**/node_modules`),
           join(home, `${root}/**/dist`),
           join(home, `${root}/**/build`),
+          join(home, `${root}/**/target`),
+          join(home, `${root}/**/.build`),
+          join(home, `${root}/**/out`),
+          join(home, `${root}/**/coverage`),
+          join(home, `${root}/**/.vite`),
           join(home, `${root}/**/.cache`),
           join(home, `${root}/**/.parcel-cache`),
           join(home, `${root}/**/.svelte-kit`),
@@ -316,11 +318,9 @@ export function getCleanerScanCategories(mode: RunLevel): ScanCategory[] {
         join(home, "Library/Application Support/Slack/Cache/*"),
         join(home, "Library/Application Support/Slack/Code Cache/*"),
         join(home, "Library/Application Support/Slack/GPUCache/*"),
-        join(home, "Library/Caches/com.tinyspeck.slackmacgap/*"),
         join(home, "Library/Application Support/discord/Cache/*"),
         join(home, "Library/Application Support/discord/Code Cache/*"),
         join(home, "Library/Application Support/discord/GPUCache/*"),
-        join(home, "Library/Caches/com.spotify.client/*"),
         join(
           home,
           "Library/Application Support/Spotify/PersistentCache/Storage/*",

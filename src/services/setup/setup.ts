@@ -72,16 +72,37 @@ export async function runSetup(options: SetupOptions): Promise<void> {
     }
 
     const spinner = ora("Homebrew not found. Installing Homebrew").start();
+    if (!effective.dryRun) {
+      // The official installer may prompt for administrator credentials and
+      // emits its own progress. Give it the terminal while it runs.
+      spinner.stop();
+    }
     const result = await runCommand(
       "/bin/bash",
       [
         "-c",
-        "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)",
+        "curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | /bin/bash",
       ],
-      { dryRun: effective.dryRun, allowFailure: true },
+      {
+        dryRun: effective.dryRun,
+        allowFailure: true,
+        stdio: effective.dryRun ? "pipe" : "inherit",
+      },
     );
 
     if (result.code === 0) {
+      if (!effective.dryRun) {
+        await ensureManagedPath("brew");
+        if (!(await hasBrew())) {
+          spinner.fail(chalk.red("Homebrew installer finished without a working brew"));
+          return {
+            status: "failed",
+            details: [
+              "The installer exited successfully, but brew --version could not be run.",
+            ],
+          };
+        }
+      }
       spinner.succeed(chalk.green("Homebrew installation step completed"));
       return {
         status: "success",

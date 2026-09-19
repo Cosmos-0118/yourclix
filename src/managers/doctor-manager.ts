@@ -200,18 +200,30 @@ export async function runDoctorChecks(): Promise<DoctorReport> {
     async () => getOutdatedPackages(),
   );
 
-  const brewOutdatedCount =
-    outdatedPkgs.formulae.length + outdatedPkgs.casks.length;
-  if (brewOutdatedCount > 0) {
+  if (!outdatedPkgs.ok) {
     issues.push({
-      id: "brew-outdated",
-      title: "Outdated Homebrew packages",
-      description: `${brewOutdatedCount} outdated (${outdatedPkgs.formulae.length} formulae, ${outdatedPkgs.casks.length} casks)`,
-      safeToFix: true,
-      command: "your fix",
-      recommendedCommand: "your fix",
-      severity: "info",
+      id: "brew-check-failed",
+      title: "Homebrew package freshness could not be checked",
+      description: outdatedPkgs.error ?? "brew outdated returned an error",
+      safeToFix: false,
+      command: "brew doctor",
+      recommendedCommand: "brew doctor",
+      severity: "warn",
     });
+  } else {
+    const brewOutdatedCount =
+      outdatedPkgs.formulae.length + outdatedPkgs.casks.length;
+    if (brewOutdatedCount > 0) {
+      issues.push({
+        id: "brew-outdated",
+        title: "Outdated Homebrew packages",
+        description: `${brewOutdatedCount} outdated (${outdatedPkgs.formulae.length} formulae, ${outdatedPkgs.casks.length} casks)`,
+        safeToFix: true,
+        command: "your fix",
+        recommendedCommand: "your fix",
+        severity: "info",
+      });
+    }
   }
 
   const diskFreePercent = await getDiskFreePercent(home);

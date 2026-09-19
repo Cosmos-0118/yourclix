@@ -74,7 +74,14 @@ export async function collectNodeModulesTargets(home: string): Promise<{
   for (const root of DEV_CLEAN_PROJECT_ROOTS) {
     queue.push({ dir: path.join(home, root), depth: 0 });
   }
-  queue.push({ dir: process.cwd(), depth: 0 });
+  const currentWorkingDirectory = path.resolve(process.cwd());
+  const resolvedHome = path.resolve(home);
+  if (
+    currentWorkingDirectory === resolvedHome ||
+    currentWorkingDirectory.startsWith(`${resolvedHome}${path.sep}`)
+  ) {
+    queue.push({ dir: currentWorkingDirectory, depth: 0 });
+  }
 
   const seenDirs = new Set<string>();
   const targets: string[] = [];
@@ -127,7 +134,9 @@ export async function collectNodeModulesTargets(home: string): Promise<{
 
   return {
     paths: targets,
-    truncated: targets.length >= DEV_CLEAN_MAX_TARGETS,
+    // A full result set with exactly the cap is not necessarily truncated.
+    // The queue tells us whether there was work left when the cap stopped us.
+    truncated: targets.length >= DEV_CLEAN_MAX_TARGETS && queue.length > 0,
   };
 }
 
