@@ -78,21 +78,36 @@ export function hasCriticalBrewFailure(steps: BrewStepResult[]): boolean {
   return steps.some((step) => step.critical && step.status === "failed");
 }
 
-export function printCleanupCandidates(output: string): void {
-  const lines = output
+const CANDIDATE_PREFIXES = [
+  "Would remove",
+  "Would prune",
+  "Would delete",
+  "Would uninstall",
+  "Removing",
+  "Pruned",
+  "Deleted",
+];
+const RESULT_PREFIXES = ["Removing", "Pruned", "Deleted", "Would remove", "Would prune"];
+
+function filterPrefixedLines(output: string, prefixes: string[]): string[] {
+  return output
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
-    .filter(
-      (line) =>
-        line.startsWith("Would remove") ||
-        line.startsWith("Would prune") ||
-        line.startsWith("Would delete") ||
-        line.startsWith("Would uninstall") ||
-        line.startsWith("Removing") ||
-        line.startsWith("Pruned") ||
-        line.startsWith("Deleted"),
-    );
+    .filter((line) => prefixes.some((prefix) => line.startsWith(prefix)));
+}
+
+/** Pure line extraction shared by the plain printers and the TUI dashboard. */
+export function getCleanupCandidateLines(output: string): string[] {
+  return filterPrefixedLines(output, CANDIDATE_PREFIXES);
+}
+
+export function getCleanupResultLines(output: string): string[] {
+  return filterPrefixedLines(output, RESULT_PREFIXES);
+}
+
+export function printCleanupCandidates(output: string): void {
+  const lines = getCleanupCandidateLines(output);
 
   if (lines.length === 0) {
     log.message(chalk.dim("No cleanup candidates detected."));
@@ -110,18 +125,7 @@ export function printCleanupCandidates(output: string): void {
 }
 
 export function printCleanupResult(output: string, dryRun: boolean): void {
-  const lines = output
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .filter(
-      (line) =>
-        line.startsWith("Removing") ||
-        line.startsWith("Pruned") ||
-        line.startsWith("Deleted") ||
-        line.startsWith("Would remove") ||
-        line.startsWith("Would prune"),
-    );
+  const lines = getCleanupResultLines(output);
 
   if (lines.length === 0) {
     log.message(

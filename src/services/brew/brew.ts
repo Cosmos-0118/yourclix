@@ -25,7 +25,7 @@ function isWarningOnlyDoctorOutput(step: BrewStepResult): boolean {
   return hasWarning && !hasError;
 }
 
-function normalizeDoctorStep(step: BrewStepResult): BrewStepResult {
+export function normalizeDoctorStep(step: BrewStepResult): BrewStepResult {
   if (!isWarningOnlyDoctorOutput(step)) {
     return step;
   }

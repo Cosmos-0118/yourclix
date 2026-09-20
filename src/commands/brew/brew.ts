@@ -7,8 +7,17 @@ import {
   brewStatus,
   brewUpgrade,
 } from "../../services/brew/brew.js";
+import {
+  brewAutoremoveDashboard,
+  brewCleanDashboard,
+  brewDoctorDashboard,
+  brewOptimizeDashboard,
+  brewStatusDashboard,
+  brewUpgradeDashboard,
+} from "../../services/brew/brew-dashboard.js";
 import { withGlobalOptions } from "../helpers.js";
-import { withIntroOutro } from "../../core/task-ui.js";
+import { interactive, withIntroOutro } from "../../core/task-ui.js";
+import { runStepDashboard } from "../../tui/StepDashboard.js";
 
 function titleFor(name: string, dryRun: boolean): string {
   return dryRun ? `your brew ${name} · dry run` : `your brew ${name}`;
@@ -21,20 +30,32 @@ export function registerBrew(program: Command): void {
     brew.command("doctor").description("Run brew doctor"),
   ).action(async (options) => {
     const dryRun = Boolean(options.dryRun);
-    await withIntroOutro(titleFor("doctor", dryRun), () => brewDoctor(dryRun));
+    await withIntroOutro(titleFor("doctor", dryRun), () =>
+      interactive() ?
+        runStepDashboard((hooks) => brewDoctorDashboard(dryRun, hooks))
+      : brewDoctor(dryRun),
+    );
   });
 
   withGlobalOptions(
     brew.command("status").description("Show Homebrew configuration and freshness"),
   ).action(async () => {
-    await withIntroOutro("your brew status", () => brewStatus());
+    await withIntroOutro("your brew status", () =>
+      interactive() ?
+        runStepDashboard((hooks) => brewStatusDashboard(hooks))
+      : brewStatus(),
+    );
   });
 
   withGlobalOptions(
     brew.command("clean").description("Clean Homebrew cache and old versions"),
   ).action(async (options) => {
     const dryRun = Boolean(options.dryRun);
-    await withIntroOutro(titleFor("clean", dryRun), () => brewClean(dryRun));
+    await withIntroOutro(titleFor("clean", dryRun), () =>
+      interactive() ?
+        runStepDashboard((hooks) => brewCleanDashboard(dryRun, hooks))
+      : brewClean(dryRun),
+    );
   });
 
   withGlobalOptions(
@@ -44,7 +65,9 @@ export function registerBrew(program: Command): void {
   ).action(async (options) => {
     const dryRun = Boolean(options.dryRun);
     await withIntroOutro(titleFor("autoremove", dryRun), () =>
-      brewAutoremove(dryRun),
+      interactive() ?
+        runStepDashboard((hooks) => brewAutoremoveDashboard(dryRun, hooks))
+      : brewAutoremove(dryRun),
     );
   });
 
@@ -62,8 +85,12 @@ export function registerBrew(program: Command): void {
       ),
   ).action(async (options) => {
     const dryRun = Boolean(options.dryRun);
+    const verbose = Boolean(options.verbose);
+    const greedy = Boolean(options.greedy);
     await withIntroOutro(titleFor("upgrade", dryRun), () =>
-      brewUpgrade(dryRun, Boolean(options.verbose), Boolean(options.greedy)),
+      interactive() ?
+        runStepDashboard((hooks) => brewUpgradeDashboard(dryRun, verbose, greedy, hooks))
+      : brewUpgrade(dryRun, verbose, greedy),
     );
   });
 
@@ -71,6 +98,10 @@ export function registerBrew(program: Command): void {
     brew.command("optimize").description("Run doctor, upgrade, and cleanup"),
   ).action(async (options) => {
     const dryRun = Boolean(options.dryRun);
-    await withIntroOutro(titleFor("optimize", dryRun), () => brewOptimize(dryRun));
+    await withIntroOutro(titleFor("optimize", dryRun), () =>
+      interactive() ?
+        runStepDashboard((hooks) => brewOptimizeDashboard(dryRun, hooks))
+      : brewOptimize(dryRun),
+    );
   });
 }
