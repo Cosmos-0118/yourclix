@@ -34,22 +34,39 @@ interface HeuristicFilterResult {
   skipped: HeuristicSkipRecord[];
 }
 
+/**
+ * Parses an explicit `--days` value into a normalized retention count, or
+ * `undefined` when the caller should fall back to a prompt/default. Shared by
+ * the plain retention prompt and the TUI dashboard so both reject an invalid
+ * `--days` value the same way.
+ */
+export function parseFixedRetentionDays(
+  mode: RunLevel,
+  rawDays?: number | string,
+): number | undefined {
+  if (rawDays === undefined) {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(String(rawDays), 10);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(
+      "Invalid value for --days. Please provide a whole number.",
+    );
+  }
+
+  return normalizeRetentionDays(parsed, mode);
+}
+
 export async function resolveRetentionDays(
   input: RetentionInput,
 ): Promise<number> {
-  const defaultDays = getDefaultRetentionDays(input.mode);
-
-  if (input.rawDays !== undefined) {
-    const parsed = Number.parseInt(String(input.rawDays), 10);
-    if (!Number.isFinite(parsed)) {
-      throw new Error(
-        "Invalid value for --days. Please provide a whole number.",
-      );
-    }
-
-    return normalizeRetentionDays(parsed, input.mode);
+  const fixedDays = parseFixedRetentionDays(input.mode, input.rawDays);
+  if (fixedDays !== undefined) {
+    return fixedDays;
   }
 
+  const defaultDays = getDefaultRetentionDays(input.mode);
   const selected = await numberPrompt(
     `Delete items older than how many days for ${input.mode.toUpperCase()} cleanup?`,
     {

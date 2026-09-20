@@ -5,7 +5,7 @@ import {
   filterToAncestorRoots,
   pathSizesFast,
 } from "../../core/fs-utils.js";
-import { confirmAction, panel } from "../../core/task-ui.js";
+import { confirmAction } from "../../core/task-ui.js";
 import { CommandProgress } from "../../core/progress.js";
 import { bytesToHuman, pluralize } from "../../core/format.js";
 import type { CleanerOptions, ScanResult } from "../../core/types.js";
@@ -25,10 +25,22 @@ import {
   type SkipRecord,
 } from "./cleaner-skip-ui.js";
 
-export async function executeCleaner(
+export interface PreflightOutcome {
+  candidates: ValidatedDeletionCandidate[];
+  skipped: SkipRecord[];
+  eligibleBytes: number;
+  policy: ReturnType<typeof getCleanerHeuristicPolicy>;
+}
+
+/**
+ * Pure preflight: resolves scan results into eligible deletion candidates
+ * plus skip records, with no console output and no prompting. Shared by the
+ * plain `executeCleaner` orchestrator and the interactive TUI dashboard.
+ */
+export async function preflightCleaner(
   results: ScanResult[],
-  options: CleanerOptions,
-): Promise<void> {
+  options: Pick<CleanerOptions, "mode" | "olderThanDays">,
+): Promise<PreflightOutcome | null> {
   const pathToCategory = new Map<string, string>();
   for (const item of results) {
     for (const targetPath of item.paths) {
@@ -56,7 +68,7 @@ export async function executeCleaner(
     );
 
   if (!targets.length) {
-    return;
+    return null;
   }
 
   const policy = getCleanerHeuristicPolicy(
@@ -64,76 +76,157 @@ export async function executeCleaner(
     options.olderThanDays ?? 14,
   );
 
-  const scanProgress = new CommandProgress("Cleanup Preflight", 1);
-  const { candidates, skipped } = await scanProgress.step(
-    "Validating target paths",
-    async () => {
-      const validCandidatesWithoutSizes: ValidatedDeletionCandidate[] = [];
-      const skippedTargets: SkipRecord[] = [];
+  const validCandidatesWithoutSizes: ValidatedDeletionCandidate[] = [];
+  const skippedTargets: SkipRecord[] = [];
 
-      for (const target of targets) {
-        try {
-          const stat = await fs.lstat(target.path);
+  for (const target of targets) {
+    try {
+      const stat = await fs.lstat(target.path);
 
-          if (target.category === "Developer Project Junk") {
-            const projectSkipReason = await getProjectArtifactSkipReason(
-              target.path,
-            );
-            if (projectSkipReason) {
-              skippedTargets.push({
-                path: target.path,
-                reason: projectSkipReason,
-                category: target.category,
-                bytes: 0,
-                mtimeMs: stat.mtimeMs,
-              });
-              continue;
-            }
-          }
-
-          const candidateWithoutSize = {
+      if (target.category === "Developer Project Junk") {
+        const projectSkipReason = await getProjectArtifactSkipReason(
+          target.path,
+        );
+        if (projectSkipReason) {
+          skippedTargets.push({
             path: target.path,
+            reason: projectSkipReason,
             category: target.category,
             bytes: 0,
             mtimeMs: stat.mtimeMs,
-          } satisfies ValidatedDeletionCandidate;
-          const heuristicSkipReason = getCleanerHeuristicSkipReason(
-            candidateWithoutSize,
-            policy,
-          );
-          if (heuristicSkipReason) {
-            skippedTargets.push({
-              ...candidateWithoutSize,
-              reason: heuristicSkipReason,
-            });
-            continue;
-          }
-
-          validCandidatesWithoutSizes.push(candidateWithoutSize);
-        } catch (error) {
-          skippedTargets.push({
-            path: target.path,
-            reason: getSkipReason(error),
           });
+          continue;
         }
       }
 
-      const sizes = await pathSizesFast(
-        validCandidatesWithoutSizes.map((candidate) => candidate.path),
+      const candidateWithoutSize = {
+        path: target.path,
+        category: target.category,
+        bytes: 0,
+        mtimeMs: stat.mtimeMs,
+      } satisfies ValidatedDeletionCandidate;
+      const heuristicSkipReason = getCleanerHeuristicSkipReason(
+        candidateWithoutSize,
+        policy,
       );
-      const validCandidates = validCandidatesWithoutSizes.map((candidate) => ({
-        ...candidate,
-        bytes: sizes.get(path.normalize(candidate.path)) ?? 0,
-      }));
-      const filtered = applyCleanerHeuristics(validCandidates, policy);
-      return {
-        candidates: filtered.candidates,
-        skipped: [...skippedTargets, ...filtered.skipped],
-      };
-    },
+      if (heuristicSkipReason) {
+        skippedTargets.push({
+          ...candidateWithoutSize,
+          reason: heuristicSkipReason,
+        });
+        continue;
+      }
+
+      validCandidatesWithoutSizes.push(candidateWithoutSize);
+    } catch (error) {
+      skippedTargets.push({
+        path: target.path,
+        reason: getSkipReason(error),
+      });
+    }
+  }
+
+  const sizes = await pathSizesFast(
+    validCandidatesWithoutSizes.map((candidate) => candidate.path),
+  );
+  const validCandidates = validCandidatesWithoutSizes.map((candidate) => ({
+    ...candidate,
+    bytes: sizes.get(path.normalize(candidate.path)) ?? 0,
+  }));
+  const filtered = applyCleanerHeuristics(validCandidates, policy);
+  const candidates = filtered.candidates;
+  const skipped = [...skippedTargets, ...filtered.skipped];
+  const eligibleBytes = candidates.reduce((sum, candidate) => sum + candidate.bytes, 0);
+
+  return { candidates, skipped, eligibleBytes, policy };
+}
+
+export interface BackupOutcome {
+  deletedCount: number;
+  reclaimedBytes: number;
+  backupId: string | null;
+  backupWarnings: string[];
+}
+
+/**
+ * Pure backup execution: moves candidates into the undo backup (or simulates
+ * it for `--dry-run`), with no console output. Shared by the plain
+ * `executeCleaner` orchestrator and the interactive TUI dashboard.
+ */
+export async function runCleanerBackup(
+  candidates: ValidatedDeletionCandidate[],
+  options: Pick<CleanerOptions, "mode" | "dryRun">,
+): Promise<BackupOutcome> {
+  if (options.dryRun) {
+    return {
+      deletedCount: candidates.length,
+      reclaimedBytes: candidates.reduce((sum, c) => sum + c.bytes, 0),
+      backupId: null,
+      backupWarnings: [],
+    };
+  }
+
+  const candidatePaths = candidates.map((c) => c.path);
+  const { metadata, warnings } = await undoManager.createBackup(
+    candidatePaths,
+    "clean",
+    [options.mode],
   );
 
-  const eligibleBytes = candidates.reduce((sum, candidate) => sum + candidate.bytes, 0);
+  return {
+    deletedCount: metadata.filesCount,
+    reclaimedBytes: metadata.byteSize,
+    backupId: metadata.id,
+    backupWarnings: warnings,
+  };
+}
+
+export function buildCleanupSummaryPanel(
+  outcome: BackupOutcome,
+  skippedCount: number,
+  policy: { olderThanDays: number },
+  dryRun: boolean,
+): { title: string; body: string[] } {
+  const actionWord = dryRun ? "Would remove" : "Moved to undo backup";
+  const reclaimedLabel = dryRun ? "Potential reclaim" : "Backup size";
+
+  const summaryBody = [
+    chalk.bold.white(`${actionWord}: ${pluralize(outcome.deletedCount, "path")}`),
+    chalk.gray(`Skipped by safety checks: ${pluralize(skippedCount, "path")}`),
+    chalk.gray(`Retention: targets must be older than ${policy.olderThanDays} days`),
+    "",
+    chalk.cyan.bold(`${reclaimedLabel}: ${bytesToHuman(outcome.reclaimedBytes)}`),
+  ];
+
+  if (!dryRun && outcome.backupId) {
+    summaryBody.push(
+      chalk.yellow("Disk space is not freed until this undo backup is pruned."),
+    );
+    summaryBody.push(
+      "",
+      chalk.green(`Backup: ~/.your-backups/${outcome.backupId}`),
+      chalk.dim(`Undo: your undo restore ${outcome.backupId}`),
+    );
+  }
+
+  return { title: dryRun ? "Dry run" : "Cleanup complete", body: summaryBody };
+}
+
+export async function executeCleaner(
+  results: ScanResult[],
+  options: CleanerOptions,
+): Promise<void> {
+  const scanProgress = new CommandProgress("Cleanup Preflight", 1);
+  const outcome = await scanProgress.step("Validating target paths", () =>
+    preflightCleaner(results, options),
+  );
+
+  if (!outcome) {
+    return;
+  }
+
+  const { candidates, skipped, eligibleBytes, policy } = outcome;
+
   console.log(chalk.cyan(
     `Eligible after safety checks: ${pluralize(candidates.length, "path")}, ${bytesToHuman(eligibleBytes)}`,
   ));
@@ -162,66 +255,25 @@ export async function executeCleaner(
   }
 
   const progress = new CommandProgress("Cleanup Execution", 1);
-  let deletedCount = 0;
-  let reclaimedBytes = 0;
-  let backupId: string | null = null;
-  let backupWarnings: string[] = [];
-
-  await progress.step(`Moving ${candidates.length} valid paths to undo backup`, async () => {
-    if (options.dryRun) {
-      deletedCount = candidates.length;
-      reclaimedBytes = candidates.reduce((sum, c) => sum + c.bytes, 0);
-    } else {
-      const candidatePaths = candidates.map((c) => c.path);
-      const { metadata, warnings } = await undoManager.createBackup(
-        candidatePaths,
-        "clean",
-        [options.mode],
-      );
-      backupId = metadata.id;
-      deletedCount = metadata.filesCount;
-      reclaimedBytes = metadata.byteSize;
-      backupWarnings = warnings;
-    }
-  });
-
-  const skippedCount = skipped.length;
-  const actionWord = options.dryRun ? "Would remove" : "Moved to undo backup";
-  const reclaimedLabel = options.dryRun ? "Potential reclaim" : "Backup size";
-
-  const summaryBody = [
-    chalk.bold.white(`${actionWord}: ${pluralize(deletedCount, "path")}`),
-    chalk.gray(`Skipped by safety checks: ${pluralize(skippedCount, "path")}`),
-    chalk.gray(`Retention: targets must be older than ${policy.olderThanDays} days`),
-    "",
-    chalk.cyan.bold(`${reclaimedLabel}: ${bytesToHuman(reclaimedBytes)}`),
-  ];
-
-  if (!options.dryRun && backupId) {
-    summaryBody.push(
-      chalk.yellow("Disk space is not freed until this undo backup is pruned."),
-    );
-  }
-
-  if (backupId && !options.dryRun) {
-    summaryBody.push(
-      "",
-      chalk.green(`Backup: ~/.your-backups/${backupId}`),
-      chalk.dim(`Undo: your undo restore ${backupId}`),
-    );
-  }
-
-  panel(summaryBody.join("\n"), options.dryRun ? "Dry run" : "Cleanup complete", (line) =>
-    options.dryRun ? chalk.blue(line) : chalk.green(line),
+  const backupOutcome = await progress.step(
+    `Moving ${candidates.length} valid paths to undo backup`,
+    () => runCleanerBackup(candidates, options),
   );
+
+  const { title, body } = buildCleanupSummaryPanel(
+    backupOutcome,
+    skipped.length,
+    policy,
+    Boolean(options.dryRun),
+  );
+  const headingColor = options.dryRun ? chalk.blue : chalk.green;
+  console.log(headingColor.bold(title));
+  console.log(body.join("\n"));
 
   printSkippedSummary(skipped, Boolean(options.verbose));
 
-  if (backupWarnings.length > 0) {
-    panel(
-      backupWarnings.map((w) => chalk.yellow(`• ${w}`)).join("\n"),
-      "Warnings",
-      (line) => chalk.yellow(line),
-    );
+  if (backupOutcome.backupWarnings.length > 0) {
+    console.log(chalk.yellow.bold("Warnings"));
+    console.log(backupOutcome.backupWarnings.map((w) => chalk.yellow(`• ${w}`)).join("\n"));
   }
 }

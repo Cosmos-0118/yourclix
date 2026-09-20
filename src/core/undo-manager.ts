@@ -4,6 +4,7 @@ import os from "node:os";
 import { createHash } from "node:crypto";
 import chalk from "chalk";
 import { pathSizeFast } from "./fs-utils.js";
+import { compactPath } from "./format.js";
 
 /**
  * UndoManager: Central system for tracking and managing deletions
@@ -168,9 +169,9 @@ class UndoManager {
             outsideManifest[manifestKey] = resolved;
           }
         } catch (error) {
-          const msg =
-            error instanceof Error ? error.message : String(error);
-          warnings.push(`Could not back up ${filePath}: ${msg}`);
+          const err = error as NodeJS.ErrnoException;
+          const reason = err?.code ?? (error instanceof Error ? error.message : String(error));
+          warnings.push(`Could not back up ${compactPath(filePath)}: ${reason}`);
         }
       }
 

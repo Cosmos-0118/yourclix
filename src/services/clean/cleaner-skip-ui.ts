@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import chalk from "chalk";
-import { pluralize, terminalWidth, wrapText } from "../../core/format.js";
+import { compactPath, pluralize, terminalWidth, wrapText } from "../../core/format.js";
 import type { HeuristicSkipRecord } from "./clean-heuristics.js";
 
 export type SkipRecord = HeuristicSkipRecord;
@@ -73,7 +73,7 @@ export function printSkippedSummary(skipped: SkipRecord[], verbose: boolean): vo
   lines.push("", chalk.dim("Paths:"));
   for (const entry of sample) {
     for (const line of wrapText(
-      `  ${entry.path} (${formatSkipReasonShort(entry.reason)})`,
+      `  ${compactPath(entry.path)} (${formatSkipReasonShort(entry.reason)})`,
       Math.max(20, terminalWidth() - 2),
     )) {
       lines.push(chalk.dim(line));

@@ -2,16 +2,22 @@ import path from "node:path";
 import chalk from "chalk";
 import fg from "fast-glob";
 import { bytesToHuman, pad } from "../../core/format.js";
-import { panel, startProgressBar } from "../../core/task-ui.js";
+import { startProgressBar } from "../../core/task-ui.js";
 import { filterToAncestorRoots, sumPathSizesFast } from "../../core/fs-utils.js";
 import { getCleanerScanCategories } from "../../managers/clean-scan-manager.js";
 import type { CleanerOptions, ScanResult } from "../../core/types.js";
 
+export interface ScanHooks {
+  onCategoryScanned?(result: ScanResult): void;
+  onLargeResultWarning?(warning: string): void;
+}
+
 export async function scanCleanerTargets(
   mode: CleanerOptions["mode"],
+  hooks?: ScanHooks,
 ): Promise<ScanResult[]> {
   const eligible = getCleanerScanCategories(mode);
-  const bar = startProgressBar(
+  const bar = hooks ? undefined : startProgressBar(
     `Scanning (${mode.toUpperCase()})`,
     eligible.length,
   );
@@ -32,21 +38,24 @@ export async function scanCleanerTargets(
     const bytes = await sumPathSizesFast(distinct, 12);
     const result = { category: target.category, paths: distinct, bytes } satisfies ScanResult;
 
-    bar.advance(1, target.category);
+    bar?.advance(1, target.category);
 
     if (result.paths.length > 0) {
       if (result.paths.length > 2000) {
-        largeResultWarnings.push(
-          `${result.category}: large result set detected (${result.paths.length} paths).`,
-        );
+        const warning = `${result.category}: large result set detected (${result.paths.length} paths).`;
+        largeResultWarnings.push(warning);
+        hooks?.onLargeResultWarning?.(warning);
       }
       results.push(result);
+      hooks?.onCategoryScanned?.(result);
     }
   }
 
-  bar.stop(`Scanned ${eligible.length} categories`);
-  for (const warning of largeResultWarnings) {
-    console.log(chalk.yellow(warning));
+  bar?.stop(`Scanned ${eligible.length} categories`);
+  if (!hooks) {
+    for (const warning of largeResultWarnings) {
+      console.log(chalk.yellow(warning));
+    }
   }
 
   return dedupeCleanerScanResults(results);
@@ -124,6 +133,7 @@ export function printCleanerResults(results: ScanResult[]): void {
   rows.push("");
   rows.push(`${pad("Discovered size", labelWidth)}${chalk.bold.cyan(bytesToHuman(total))}`);
 
-  panel(rows.join("\n"), "Scan summary", (line) => chalk.dim(line));
+  console.log(chalk.bold("Scan summary"));
+  console.log(rows.join("\n"));
   console.log(chalk.dim("Eligibility is calculated during cleanup preflight."));
 }

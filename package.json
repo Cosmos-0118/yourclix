@@ -36,10 +36,13 @@
     "chalk": "^5.4.1",
     "commander": "^13.1.0",
     "fast-glob": "^3.3.3",
-    "ora": "^8.2.0"
+    "ink": "^7.1.1",
+    "ora": "^8.2.0",
+    "react": "^19.3.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "@types/react": "^19.3.0",
     "tsx": "^4.22.4",
     "typescript": "^5.8.2"
   },
