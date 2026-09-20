@@ -31,7 +31,7 @@ export PATH="$(npm prefix -g)/bin:$PATH"
 
 npm install
 npm run build
-npm install -g .
+npm install -g . --ignore-scripts
 
 GLOBAL_BIN="$(npm prefix -g)/bin/your"
 if [[ -e "$GLOBAL_BIN" ]]; then
