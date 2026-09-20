@@ -1,5 +1,5 @@
-import boxen from "boxen";
 import chalk from "chalk";
+import { box, log } from "@clack/prompts";
 import { CommandProgress } from "../../core/progress.js";
 import {
   getOutdatedPackages,
@@ -197,44 +197,34 @@ export async function brewUpgrade(
     env: { HOMEBREW_NO_AUTO_UPDATE: "1" },
   } as const;
 
-  console.log(
-    boxen(
-      [
-        chalk.white.bold("Plan"),
-        "",
-        chalk.green("  Formulae to upgrade     determined after metadata refresh"),
-        chalk.magenta(
-          greedy ?
-            "  Casks to upgrade        includes latest/auto-updating casks"
-          : "  Casks to upgrade        standard outdated casks only",
-        ),
-        "",
-        verbose ?
-          chalk.dim(
-            "Full Homebrew output (every pour / symlink / rm line) — same as brew --verbose.",
-          )
-        : [
-            chalk.gray(
-              "You will see summaries, git fetch, downloads, pours, and errors — not thousands of ln -s lines.",
-            ),
-            chalk.dim(
-              "Pass --verbose on this command for the complete brew transcript.",
-            ),
-          ].join("\n"),
-        "",
+  box(
+    [
+      chalk.green("Formulae to upgrade     determined after metadata refresh"),
+      chalk.magenta(
+        greedy ?
+          "Casks to upgrade        includes latest/auto-updating casks"
+        : "Casks to upgrade        standard outdated casks only",
+      ),
+      "",
+      verbose ?
         chalk.dim(
-          "brew update can sit quiet on slow networks — a faint heartbeat prints every 45s.",
-        ),
-      ].join("\n"),
-      {
-        title: chalk.bold.white(" your brew upgrade "),
-        titleAlignment: "center",
-        borderStyle: "round",
-        borderColor: "cyan",
-        padding: { left: 1, right: 1, top: 0, bottom: 0 },
-        margin: { top: 0, bottom: 0 },
-      },
-    ),
+          "Full Homebrew output (every pour / symlink / rm line) — same as brew --verbose.",
+        )
+      : [
+          chalk.gray(
+            "You will see summaries, git fetch, downloads, pours, and errors — not thousands of ln -s lines.",
+          ),
+          chalk.dim(
+            "Pass --verbose on this command for the complete brew transcript.",
+          ),
+        ].join("\n"),
+      "",
+      chalk.dim(
+        "brew update can sit quiet on slow networks — a faint heartbeat prints every 45s.",
+      ),
+    ].join("\n"),
+    "Plan",
+    { formatBorder: (line) => chalk.cyan(line) },
   );
 
   const steps: BrewStepResult[] = [];
@@ -250,9 +240,9 @@ export async function brewUpgrade(
         "Skipped because dry-run is enabled.",
       );
     })()
-  : await preflight.interactiveStepWithStatus(
+  : await preflight.streamStep(
       "brew update — refresh taps & metadata",
-      () =>
+      (logLine) =>
         runBrewStep(
           "Brew update",
           "brew",
@@ -262,7 +252,7 @@ export async function brewUpgrade(
           true,
           false,
           true,
-          streamOpts,
+          { ...streamOpts, onLine: logLine },
         ),
     );
   steps.push(updateStep);
@@ -327,9 +317,9 @@ export async function brewUpgrade(
       });
     } else {
       steps.push(
-        await actions.interactiveStepWithStatus(
+        await actions.streamStep(
           `brew upgrade ${formulae.length} formulae`,
-          () =>
+          (logLine) =>
             runBrewStep(
               "Upgrade formulae",
               "brew",
@@ -337,7 +327,7 @@ export async function brewUpgrade(
               true,
               false,
               true,
-              upgradeStreamOpts,
+              { ...upgradeStreamOpts, onLine: logLine },
             ),
         ),
       );
@@ -363,9 +353,9 @@ export async function brewUpgrade(
       });
     } else {
       steps.push(
-        await actions.interactiveStepWithStatus(
+        await actions.streamStep(
           `brew upgrade ${casks.length} casks`,
-          () =>
+          (logLine) =>
             runBrewStep(
               "Upgrade casks",
               "brew",
@@ -373,7 +363,7 @@ export async function brewUpgrade(
               true,
               false,
               true,
-              upgradeStreamOpts,
+              { ...upgradeStreamOpts, onLine: logLine },
             ),
         ),
       );
@@ -390,16 +380,9 @@ export async function brewUpgrade(
       ),
     ];
 
-    console.log(
-      boxen(rows.join("\n"), {
-        title: chalk.bold.white(dryRun ? " Planned targets " : " Upgrade targets "),
-        titleAlignment: "left",
-        borderStyle: "round",
-        borderColor: "green",
-        padding: { left: 1, right: 1, top: 0, bottom: 0 },
-        margin: { top: 1, bottom: 0 },
-      }),
-    );
+    box(rows.join("\n"), dryRun ? "Planned targets" : "Upgrade targets", {
+      formatBorder: (line) => chalk.green(line),
+    });
   }
 
   printBrewSummary("your brew upgrade", steps);
@@ -466,12 +449,12 @@ export async function brewAutoremove(dryRun = false): Promise<void> {
 }
 
 export async function brewOptimize(dryRun = false): Promise<void> {
-  console.log(chalk.bold("Pre-cleanup doctor pass"));
+  log.step("Pre-cleanup doctor pass");
   await brewDoctor(dryRun);
   await brewUpgrade(dryRun, false, false);
   await brewClean(dryRun);
 
-  console.log(chalk.bold("Post-cleanup doctor pass"));
+  log.step("Post-cleanup doctor pass");
   await brewDoctor(dryRun);
 
   console.log(chalk.green("Brew optimize completed."));

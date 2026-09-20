@@ -25,8 +25,15 @@ export interface FilteredStreamOptions {
   suppressLine?: (line: string, stream: "stdout" | "stderr") => boolean;
   /** Optional ANSI styling before writing to the display stream. */
   formatLine?: (line: string, stream: "stdout" | "stderr") => string;
-  /** Where filtered lines go (default stdout). */
+  /** Where filtered lines go (default stdout). Ignored when `onLine` is set. */
   displayStream?: NodeJS.WriteStream;
+  /**
+   * Receive each formatted line instead of writing it to `displayStream`.
+   * Used to feed a live task log (e.g. clack's `taskLog`) instead of the
+   * raw terminal, so a managed redraw region isn't corrupted by unrelated
+   * writes landing in the middle of it.
+   */
+  onLine?: (text: string) => void;
 }
 
 /**
@@ -57,7 +64,11 @@ export async function runCommandFilteredStream(
         return;
       }
       const text = options.formatLine?.(line, which) ?? line;
-      display.write(`${text}\n`);
+      if (options.onLine) {
+        options.onLine(text);
+      } else {
+        display.write(`${text}\n`);
+      }
     };
 
     const pushChunk = (chunk: string, which: "stdout" | "stderr") => {
@@ -96,7 +107,12 @@ export async function runCommandFilteredStream(
       const hint = `${command} ${args.slice(0, 3).join(" ")}…`;
       heartbeat = setInterval(() => {
         const time = new Date().toLocaleTimeString();
-        console.error(`\x1b[2m…still running ${hint} (${time})\x1b[0m`);
+        const pulse = `\x1b[2m…still running ${hint} (${time})\x1b[0m`;
+        if (options.onLine) {
+          options.onLine(pulse);
+        } else {
+          console.error(pulse);
+        }
       }, hbMs);
     }
 

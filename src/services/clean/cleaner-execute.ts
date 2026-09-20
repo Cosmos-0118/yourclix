@@ -1,12 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import chalk from "chalk";
-import boxen from "boxen";
+import { box } from "@clack/prompts";
 import {
   filterToAncestorRoots,
   pathSizesFast,
 } from "../../core/fs-utils.js";
-import { confirm } from "../../core/prompt.js";
+import { confirmAction } from "../../core/task-ui.js";
 import { CommandProgress } from "../../core/progress.js";
 import { bytesToHuman } from "../../core/format.js";
 import type { CleanerOptions, ScanResult } from "../../core/types.js";
@@ -151,7 +151,7 @@ export async function executeCleaner(
     return;
   }
 
-  const approved = await confirm(
+  const approved = await confirmAction(
     `Move ${candidates.length} path(s) to the undo backup in ${options.mode.toUpperCase()} mode? ` +
       `(risky paths must be older than ${policy.olderThanDays} day(s))`,
     Boolean(options.yes),
@@ -214,33 +214,17 @@ export async function executeCleaner(
     );
   }
 
-  console.log(
-    boxen(summaryBody.join("\n"), {
-      padding: { left: 2, right: 2, top: 0, bottom: 0 },
-      margin: { top: 1, bottom: 0 },
-      borderStyle: "round",
-      borderColor: options.dryRun ? "blue" : "green",
-      title: options.dryRun ? "Dry run" : "Cleanup complete",
-    }),
-  );
+  box(summaryBody.join("\n"), options.dryRun ? "Dry run" : "Cleanup complete", {
+    formatBorder: (line) => (options.dryRun ? chalk.blue(line) : chalk.green(line)),
+  });
 
   printSkippedSummary(skipped, Boolean(options.verbose));
 
   if (backupWarnings.length > 0) {
-    console.log(
-      boxen(
-        [
-          chalk.yellow.bold("Warnings"),
-          "",
-          ...backupWarnings.map((w) => chalk.yellow(`• ${w}`)),
-        ].join("\n"),
-        {
-          padding: { left: 1, right: 1, top: 0, bottom: 0 },
-          margin: { top: 1, bottom: 0 },
-          borderStyle: "round",
-          borderColor: "yellow",
-        },
-      ),
+    box(
+      backupWarnings.map((w) => chalk.yellow(`• ${w}`)).join("\n"),
+      "Warnings",
+      { formatBorder: (line) => chalk.yellow(line) },
     );
   }
 }

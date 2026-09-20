@@ -1,9 +1,9 @@
 import path from "node:path";
 import chalk from "chalk";
-import boxen from "boxen";
+import { box } from "@clack/prompts";
 import fg from "fast-glob";
 import { bytesToHuman, pad } from "../../core/format.js";
-import { CommandProgress } from "../../core/progress.js";
+import { startProgressBar } from "../../core/task-ui.js";
 import { filterToAncestorRoots, sumPathSizesFast } from "../../core/fs-utils.js";
 import { getCleanerScanCategories } from "../../managers/clean-scan-manager.js";
 import type { CleanerOptions, ScanResult } from "../../core/types.js";
@@ -12,49 +12,42 @@ export async function scanCleanerTargets(
   mode: CleanerOptions["mode"],
 ): Promise<ScanResult[]> {
   const eligible = getCleanerScanCategories(mode);
-
-  const progress = new CommandProgress(
-    `Cleaner Scan (${mode.toUpperCase()})`,
+  const bar = startProgressBar(
+    `Scanning (${mode.toUpperCase()})`,
     eligible.length,
   );
 
   const results: ScanResult[] = [];
+  const largeResultWarnings: string[] = [];
+
   for (const target of eligible) {
-    const result = await progress.step(
-      `Scanning ${target.category}`,
-      async () => {
-        const matches = await fg(target.globs, {
-          dot: true,
-          onlyFiles: false,
-          onlyDirectories: false,
-          unique: true,
-          suppressErrors: true,
-        });
+    const matches = await fg(target.globs, {
+      dot: true,
+      onlyFiles: false,
+      onlyDirectories: false,
+      unique: true,
+      suppressErrors: true,
+    });
 
-        const distinct = [...new Set(matches)];
-        const bytes = await sumPathSizesFast(distinct, 12);
+    const distinct = [...new Set(matches)];
+    const bytes = await sumPathSizesFast(distinct, 12);
+    const result = { category: target.category, paths: distinct, bytes } satisfies ScanResult;
 
-        return {
-          category: target.category,
-          paths: distinct,
-          bytes,
-        } satisfies ScanResult;
-      },
-    );
+    bar.advance(1, target.category);
 
     if (result.paths.length > 0) {
-      progress.info(
-        `${result.category}: ${bytesToHuman(result.bytes)} across ${result.paths.length} paths`,
-      );
       if (result.paths.length > 2000) {
-        progress.info(
+        largeResultWarnings.push(
           `${result.category}: large result set detected (${result.paths.length} paths).`,
         );
       }
       results.push(result);
-    } else {
-      progress.info(`${result.category}: no cleanup candidates`);
     }
+  }
+
+  bar.stop(`Scanned ${eligible.length} categories`);
+  for (const warning of largeResultWarnings) {
+    console.log(chalk.yellow(warning));
   }
 
   return dedupeCleanerScanResults(results);
@@ -118,19 +111,16 @@ export function printCleanerResults(results: ScanResult[]): void {
     return;
   }
 
-  const rule = chalk.dim("─".repeat(52));
-  console.log(chalk.bold("\nScan summary"));
-  console.log(rule);
-  for (const result of results) {
-    console.log(
-      `  ${pad(result.category, 24)} ${chalk.cyan(bytesToHuman(result.bytes))}  ${chalk.dim(`${result.paths.length} paths`)}`,
-    );
-  }
-
-  console.log(rule);
-  const total = results.reduce((sum, item) => sum + item.bytes, 0);
-  console.log(
-    `  ${pad("Discovered size", 24)} ${chalk.bold.cyan(bytesToHuman(total))}`,
+  const rows = results.map(
+    (result) =>
+      `${pad(result.category, 24)} ${chalk.cyan(bytesToHuman(result.bytes))}  ${chalk.dim(`${result.paths.length} paths`)}`,
   );
-  console.log(chalk.dim("  Eligibility is calculated during cleanup preflight."));
+  const total = results.reduce((sum, item) => sum + item.bytes, 0);
+  rows.push("");
+  rows.push(`${pad("Discovered size", 24)} ${chalk.bold.cyan(bytesToHuman(total))}`);
+
+  box(rows.join("\n"), "Scan summary", {
+    formatBorder: (line) => chalk.dim(line),
+  });
+  console.log(chalk.dim("Eligibility is calculated during cleanup preflight."));
 }

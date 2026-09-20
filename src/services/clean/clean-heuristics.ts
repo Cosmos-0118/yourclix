@@ -1,5 +1,5 @@
 import type { RunLevel } from "../../core/types.js";
-import { askNumber } from "../../core/prompt.js";
+import { numberPrompt } from "../../core/task-ui.js";
 import {
   buildCleanerHeuristicPolicy,
   getDefaultRetentionDays,
@@ -50,7 +50,7 @@ export async function resolveRetentionDays(
     return normalizeRetentionDays(parsed, input.mode);
   }
 
-  const selected = await askNumber(
+  const selected = await numberPrompt(
     `Delete items older than how many days for ${input.mode.toUpperCase()} cleanup?`,
     {
       defaultValue: defaultDays,

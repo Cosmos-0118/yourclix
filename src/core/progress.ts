@@ -1,5 +1,27 @@
 import chalk from "chalk";
-import ora from "ora";
+import {
+  log,
+  S_STEP_CANCEL,
+  S_STEP_ERROR,
+  S_STEP_SUBMIT,
+  S_WARN,
+  spinner,
+  taskLog,
+} from "@clack/prompts";
+import { interactive } from "./task-ui.js";
+
+function statusLine(status: string, text: string): string {
+  if (status === "failed") {
+    return chalk.red(`${S_STEP_ERROR}  ${text}`);
+  }
+  if (status === "warn") {
+    return chalk.yellow(`${S_WARN}  ${text}`);
+  }
+  if (status === "skipped") {
+    return chalk.dim(`${S_STEP_CANCEL}  ${text} (skipped)`);
+  }
+  return chalk.green(`${S_STEP_SUBMIT}  ${text}`);
+}
 
 export class CommandProgress {
   private current = 0;
@@ -9,97 +31,160 @@ export class CommandProgress {
     private readonly totalSteps: number,
   ) {
     if (title.trim().length > 0) {
-      console.log(chalk.bold(`\n${this.title}`));
+      log.message(chalk.bold(this.title));
     }
   }
 
-  async step<T>(label: string, task: () => Promise<T>): Promise<T> {
+  private nextPrefix(): string {
     this.current += 1;
-    const prefix = `[${this.current}/${this.totalSteps}]`;
-    const spinner = ora(`${prefix} ${label}`).start();
+    return `[${this.current}/${this.totalSteps}]`;
+  }
 
+  async step<T>(label: string, task: () => Promise<T>): Promise<T> {
+    const text = `${this.nextPrefix()} ${label}`;
+
+    if (!interactive()) {
+      console.log(chalk.cyan(`${text}...`));
+      try {
+        const result = await task();
+        console.log(statusLine("success", text));
+        return result;
+      } catch (error) {
+        console.log(statusLine("failed", text));
+        throw error;
+      }
+    }
+
+    const s = spinner();
+    s.start(text);
     try {
       const result = await task();
-      spinner.succeed(chalk.green(`${prefix} ${label}`));
+      s.stop(text);
       return result;
     } catch (error) {
-      spinner.fail(chalk.red(`${prefix} ${label}`));
+      s.error(text);
       throw error;
     }
   }
 
   async interactiveStep<T>(label: string, task: () => Promise<T>): Promise<T> {
-    this.current += 1;
-    const prefix = `[${this.current}/${this.totalSteps}]`;
-    console.log(chalk.cyan(`${prefix} ${label}...`));
+    const text = `${this.nextPrefix()} ${label}`;
+    console.log(chalk.cyan(`${text}...`));
 
     try {
       const result = await task();
-      console.log(chalk.green(`✔ ${prefix} ${label}`));
+      console.log(statusLine("success", text));
       return result;
     } catch (error) {
-      console.log(chalk.red(`✖ ${prefix} ${label}`));
+      console.log(statusLine("failed", text));
       throw error;
     }
   }
 
   /**
-   * Like interactiveStep but for tasks that return { status: 'success' | 'failed' }
-   * (e.g. brew) so we show ✔/✖ from the result instead of always succeeding.
+   * Like interactiveStep but for tasks that return { status: 'success' | 'failed' | ... }
+   * (e.g. brew) so we show the right marker from the result instead of always succeeding.
    */
   async interactiveStepWithStatus<T extends { status: string }>(
     label: string,
     task: () => Promise<T>,
   ): Promise<T> {
-    this.current += 1;
-    const prefix = `[${this.current}/${this.totalSteps}]`;
-    console.log(chalk.bold.cyan(`${prefix} ${label}`));
+    const text = `${this.nextPrefix()} ${label}`;
 
+    if (!interactive()) {
+      console.log(chalk.bold.cyan(text));
+      const result = await task();
+      console.log(statusLine(result.status, text));
+      return result;
+    }
+
+    const s = spinner();
+    s.start(text);
     const result = await task();
 
     if (result.status === "failed") {
-      console.log(chalk.red(`  ✖ ${prefix} ${label}`));
-    } else if (result.status === "warn") {
-      console.log(chalk.yellow(`  ⚠ ${prefix} ${label}`));
-    } else if (result.status === "skipped") {
-      console.log(chalk.yellow(`  ⊘ ${prefix} ${label} (skipped)`));
+      s.error(text);
+    } else if (result.status === "success") {
+      s.stop(text);
     } else {
-      console.log(chalk.green(`  ✔ ${prefix} ${label}`));
+      // warn / skipped: clack's spinner only has green-stop or red-error
+      // terminal states, so clear it and print our own marker.
+      s.clear();
+      console.log(statusLine(result.status, text));
     }
 
     return result;
   }
 
   /**
-   * Ora step that reflects success / failed / skipped (e.g. network repair steps).
+   * For steps that pipe a subprocess's own stdout/stderr through live
+   * (e.g. `brew update`/`brew upgrade`). Renders a rolling, bounded log that
+   * clears on success and stays visible on failure, instead of dumping raw
+   * output straight into the scrollback.
+   */
+  async streamStep<T extends { status: string }>(
+    label: string,
+    task: (logLine: (line: string) => void) => Promise<T>,
+  ): Promise<T> {
+    const text = `${this.nextPrefix()} ${label}`;
+
+    if (!interactive()) {
+      console.log(chalk.bold.cyan(text));
+      const result = await task((line) => console.log(line));
+      console.log(statusLine(result.status, text));
+      return result;
+    }
+
+    const log = taskLog({ title: text, limit: 8 });
+    const result = await task((line) => log.message(line));
+
+    if (result.status === "failed") {
+      log.error(text);
+    } else {
+      log.success(text);
+    }
+
+    return result;
+  }
+
+  /**
+   * Ora-era name kept for network repair steps (success / failed / skipped).
    */
   async stepNetwork<T extends { status: "success" | "failed" | "skipped" }>(
     label: string,
     task: () => Promise<T>,
   ): Promise<T> {
-    this.current += 1;
-    const prefix = `[${this.current}/${this.totalSteps}]`;
-    const spinner = ora(`${prefix} ${label}`).start();
+    const text = `${this.nextPrefix()} ${label}`;
+
+    if (!interactive()) {
+      console.log(chalk.cyan(`${text}...`));
+      const result = await task();
+      console.log(statusLine(result.status, text));
+      return result;
+    }
+
+    const s = spinner();
+    s.start(text);
     try {
       const result = await task();
       if (result.status === "failed") {
-        spinner.fail(chalk.red(`${prefix} ${label}`));
+        s.error(text);
       } else if (result.status === "skipped") {
-        spinner.warn(chalk.yellow(`${prefix} ${label}`));
+        s.clear();
+        console.log(statusLine("warn", text));
       } else {
-        spinner.succeed(chalk.green(`${prefix} ${label}`));
+        s.stop(text);
       }
       return result;
     } catch (error) {
-      spinner.fail(chalk.red(`${prefix} ${label}`));
+      s.error(text);
       throw error;
     }
   }
 
   tick(label: string): void {
-    this.current += 1;
-    const prefix = `[${this.current}/${this.totalSteps}]`;
-    console.log(chalk.green(`${prefix} ${label}`));
+    const text = `${this.nextPrefix()} ${label}`;
+    console.log(statusLine("success", text));
   }
 
   info(message: string): void {

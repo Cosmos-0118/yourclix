@@ -8,6 +8,7 @@ import {
 import { withGlobalOptions } from "../helpers.js";
 import type { RunLevel } from "../../core/types.js";
 import { resolveRetentionDays } from "../../services/clean/clean-heuristics.js";
+import { withIntroOutro } from "../../core/task-ui.js";
 
 export function registerClean(program: Command): void {
   withGlobalOptions(
@@ -32,26 +33,31 @@ Examples:
       ),
   ).action(async (options) => {
     const mode = resolveRunLevel(options);
+    const dryRun = Boolean(options.dryRun);
+    const title =
+      `your clean · ${mode}` + (dryRun ? " · dry run" : "");
 
-    if (options.verify) {
-      await runCleanerSelfCheck(mode);
-      return;
-    }
+    await withIntroOutro(title, async () => {
+      if (options.verify) {
+        await runCleanerSelfCheck(mode);
+        return;
+      }
 
-    const olderThanDays = await resolveRetentionDays({
-      mode,
-      rawDays: options.days,
-      assumeYes: options.yes,
-    });
+      const olderThanDays = await resolveRetentionDays({
+        mode,
+        rawDays: options.days,
+        assumeYes: options.yes,
+      });
 
-    const results = await scanCleanerTargets(mode);
-    printCleanerResults(results);
-    await executeCleaner(results, {
-      mode,
-      olderThanDays,
-      dryRun: options.dryRun,
-      yes: options.yes,
-      verbose: Boolean(options.verbose),
+      const results = await scanCleanerTargets(mode);
+      printCleanerResults(results);
+      await executeCleaner(results, {
+        mode,
+        olderThanDays,
+        dryRun: options.dryRun,
+        yes: options.yes,
+        verbose: Boolean(options.verbose),
+      });
     });
   });
 }

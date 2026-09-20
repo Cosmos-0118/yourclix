@@ -1,5 +1,5 @@
-import boxen from "boxen";
 import chalk from "chalk";
+import { note } from "@clack/prompts";
 import {
   runCommand,
   runCommandFilteredStream,
@@ -69,17 +69,7 @@ export function printBrewSummary(title: string, steps: BrewStepResult[]): void {
     return lines.join("\n");
   });
 
-  console.log(
-    "\n" +
-      boxen(blocks.join("\n\n"), {
-        title: chalk.bold.white(` ${title} `),
-        titleAlignment: "left",
-        borderStyle: "round",
-        borderColor: "gray",
-        padding: { left: 1, right: 1, top: 0, bottom: 0 },
-        margin: { top: 0, bottom: 0 },
-      }),
-  );
+  note(blocks.join("\n\n"), title);
 }
 
 export function hasCriticalBrewFailure(steps: BrewStepResult[]): boolean {
@@ -170,6 +160,8 @@ export interface BrewStreamOptions {
   verbose?: boolean;
   /** Additional Homebrew environment overrides for a specific operation. */
   env?: NodeJS.ProcessEnv;
+  /** Route formatted output lines into a live task log instead of stdout. */
+  onLine?: (line: string) => void;
 }
 
 /** Low-value pour/link noise Homebrew prints during bottles/cleanup. */
@@ -266,6 +258,7 @@ export async function runBrewStep(
         heartbeatMs: streamOpts?.heartbeatMs,
         suppressLine: fullVerbose ? undefined : suppressBrewPourNoise,
         formatLine: fullVerbose ? undefined : formatBrewStreamLine,
+        onLine: streamOpts?.onLine,
       })
     : await runCommand(command, args, {
       dryRun,
@@ -280,9 +273,7 @@ export async function runBrewStep(
   if (useStream) {
     detail =
       result.code === 0 ?
-        fullVerbose ?
-          "Finished successfully (see live output above)."
-        : "Finished successfully (high-signal output above; use --verbose for full brew log)."
+        "Finished successfully."
       : `Failed with exit code ${result.code} (see output above).`;
   } else {
     detail =
