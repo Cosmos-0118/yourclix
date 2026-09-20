@@ -1,4 +1,5 @@
 import chalk from "chalk";
+import { pluralize } from "../../core/format.js";
 import os from "node:os";
 import { ActionableError } from "../../core/actionable-error.js";
 import { CommandProgress } from "../../core/progress.js";
@@ -141,7 +142,7 @@ export async function runAutoFix(
       }
 
       const approveSymlinkCleanup = await confirm(
-        `Remove ${brokenPaths.length} broken symlink(s) within the doctor scan scope?`,
+        `Remove ${pluralize(brokenPaths.length, "broken symlink")} within the doctor scan scope?`,
         yes,
       );
 
@@ -156,12 +157,12 @@ export async function runAutoFix(
       );
 
       const verb = dryRun ? "Would remove" : "Removed";
-      console.log(chalk.green(`\n==> ${verb} ${removed} broken symlink(s).`));
+      console.log(chalk.green(`\n==> ${verb} ${pluralize(removed, "broken symlink")}.`));
 
       if (failures.length > 0) {
         throw new ActionableError({
           code: "FIX_SYMLINK_PARTIAL_FAILURE",
-          summary: `${failures.length} symlink(s) could not be removed.`,
+          summary: `${pluralize(failures.length, "symlink")} could not be removed.`,
           details: failures.slice(0, 10).map((f) => `${f.path}: ${f.error}`),
           nextSteps: [
             "Check permissions (some paths may require elevated access).",

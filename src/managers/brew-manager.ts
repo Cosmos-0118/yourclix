@@ -1,6 +1,7 @@
 import chalk from "chalk";
 import { log } from "@clack/prompts";
 import { panel } from "../core/task-ui.js";
+import { terminalWidth, wrapText } from "../core/format.js";
 import {
   runCommand,
   runCommandFilteredStream,
@@ -100,7 +101,8 @@ export function printCleanupCandidates(output: string): void {
 
   const shown = lines
     .slice(0, 30)
-    .map((line) => chalk.dim(`- ${line}`));
+    .flatMap((line) => wrapText(`- ${line}`, Math.max(20, terminalWidth() - 2)))
+    .map((line) => chalk.dim(line));
   if (lines.length > 30) {
     shown.push(chalk.dim(`... and ${lines.length - 30} more lines`));
   }
@@ -130,7 +132,8 @@ export function printCleanupResult(output: string, dryRun: boolean): void {
 
   const shown = lines
     .slice(0, 30)
-    .map((line) => chalk.dim(`- ${line}`));
+    .flatMap((line) => wrapText(`- ${line}`, Math.max(20, terminalWidth() - 2)))
+    .map((line) => chalk.dim(line));
   if (lines.length > 30) {
     shown.push(chalk.dim(`... and ${lines.length - 30} more lines`));
   }

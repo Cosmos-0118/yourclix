@@ -2,7 +2,14 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import chalk from "chalk";
-import { bytesToHuman, pad } from "../../core/format.js";
+import {
+  bytesToHuman,
+  compactPath,
+  pad,
+  pluralize,
+  terminalWidth,
+  wrapText,
+} from "../../core/format.js";
 import { pathSizeFast, removePath } from "../../core/fs-utils.js";
 import { confirm } from "../../core/prompt.js";
 
@@ -75,14 +82,21 @@ export async function listBackups(limit = 100): Promise<void> {
   const totalBytes = entries.reduce((sum, entry) => sum + entry.sizeBytes, 0);
 
   console.log(chalk.bold("Your backups"));
-  for (const entry of shown) {
-    const row = [
-      pad(entry.kind.toUpperCase(), 4),
-      pad(formatAgeDays(entry.modifiedAt), 5),
-      pad(bytesToHuman(entry.sizeBytes), 9),
-      entry.name,
-    ].join(" ");
-    console.log(`- ${row}`);
+  if (terminalWidth() >= 90) {
+    for (const entry of shown) {
+      const row = [
+        pad(entry.kind.toUpperCase(), 4),
+        pad(formatAgeDays(entry.modifiedAt), 5),
+        pad(bytesToHuman(entry.sizeBytes), 9),
+        entry.name,
+      ].join(" ");
+      console.log(`- ${row}`);
+    }
+  } else {
+    for (const entry of shown) {
+      const row = `- ${entry.kind} · ${formatAgeDays(entry.modifiedAt)} · ${bytesToHuman(entry.sizeBytes)} · ${entry.name}`;
+      console.log(wrapText(row, Math.max(20, terminalWidth() - 2)).join("\n"));
+    }
   }
 
   if (shown.length < entries.length) {
@@ -118,7 +132,7 @@ export async function removeBackup(
   }
 
   if (dryRun) {
-    console.log(chalk.dim(`Dry-run: would delete ${targetPath}`));
+    console.log(chalk.dim(`Dry-run: would delete ${compactPath(targetPath)}`));
     return;
   }
 
@@ -142,7 +156,7 @@ export async function pruneBackups(
   );
 
   if (candidates.length === 0) {
-    console.log(chalk.green(`No backups older than ${olderThanDays} day(s).`));
+    console.log(chalk.green(`No backups older than ${olderThanDays} days.`));
     return;
   }
 
@@ -163,7 +177,7 @@ export async function pruneBackups(
   console.log(chalk.cyan(`Reclaimable: ${bytesToHuman(reclaimable)}`));
 
   const approved = await confirm(
-    `Delete ${candidates.length} backup item(s) older than ${olderThanDays} day(s)?`,
+    `Delete ${pluralize(candidates.length, "backup item")} older than ${olderThanDays} days?`,
     yes,
   );
   if (!approved) {
@@ -180,5 +194,5 @@ export async function pruneBackups(
     await removePath(entry.fullPath, false);
   }
 
-  console.log(chalk.green(`Deleted ${candidates.length} backup item(s).`));
+  console.log(chalk.green(`Deleted ${pluralize(candidates.length, "backup item")}.`));
 }

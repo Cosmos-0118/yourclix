@@ -1,5 +1,6 @@
 import chalk from "chalk";
 import { log } from "@clack/prompts";
+import { terminalWidth, wrapText } from "../../core/format.js";
 import { panel } from "../../core/task-ui.js";
 import { CommandProgress } from "../../core/progress.js";
 import {
@@ -110,7 +111,7 @@ export async function brewStatus(): Promise<void> {
 
   printBrewSummary("your brew status", steps);
   if (outdated?.ok && (outdated.formulae.length > 0 || outdated.casks.length > 0)) {
-    log.warn(`Outdated: ${[...outdated.formulae, ...outdated.casks].join(", ")}`);
+    log.warn(wrapText(`Outdated: ${[...outdated.formulae, ...outdated.casks].join(", ")}`, Math.max(20, terminalWidth() - 4)).join("\n"));
   } else if (outdated?.ok) {
     log.success("All installed formulae and casks are current.");
   }

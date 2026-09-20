@@ -1,3 +1,5 @@
+import { terminalWidth, wrapText } from "./format.js";
+
 export interface ActionableErrorOptions {
   code: string;
   summary: string;
@@ -23,19 +25,19 @@ export class ActionableError extends Error {
 
 export function formatActionableError(error: ActionableError): string[] {
   const lines: string[] = [];
-  lines.push(`Error [${error.code}]: ${error.summary}`);
+  lines.push(...wrapText(`Error [${error.code}]: ${error.summary}`, terminalWidth()));
 
   if (error.details.length > 0) {
     lines.push("Details:");
     for (const detail of error.details) {
-      lines.push(`- ${detail}`);
+      lines.push(...wrapText(`- ${detail}`, Math.max(20, terminalWidth() - 2)));
     }
   }
 
   if (error.nextSteps.length > 0) {
     lines.push("Next steps:");
     for (const step of error.nextSteps) {
-      lines.push(`- ${step}`);
+      lines.push(...wrapText(`- ${step}`, Math.max(20, terminalWidth() - 2)));
     }
   }
 

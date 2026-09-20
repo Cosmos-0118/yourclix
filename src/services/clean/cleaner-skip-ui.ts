@@ -1,7 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import chalk from "chalk";
-import { log } from "@clack/prompts";
+import { pluralize, terminalWidth, wrapText } from "../../core/format.js";
 import type { HeuristicSkipRecord } from "./clean-heuristics.js";
 
 export type SkipRecord = HeuristicSkipRecord;
@@ -43,7 +43,7 @@ export function printSkippedBreakdown(skipped: SkipRecord[]): void {
     return;
   }
 
-  log.message([chalk.bold("Skipped breakdown"), ...reasonBreakdownLines(skipped)]);
+  console.log([chalk.bold("Skipped breakdown"), ...reasonBreakdownLines(skipped)].join("\n"));
 }
 
 export function printSkippedSummary(skipped: SkipRecord[], verbose: boolean): void {
@@ -51,7 +51,7 @@ export function printSkippedSummary(skipped: SkipRecord[], verbose: boolean): vo
     return;
   }
 
-  const lines = [chalk.bold("Skipped paths"), ...reasonBreakdownLines(skipped)];
+  const lines = [chalk.bold(`Skipped paths · ${pluralize(skipped.length, "item")}`), ...reasonBreakdownLines(skipped)];
 
   if (!verbose) {
     const home = os.homedir();
@@ -62,17 +62,22 @@ export function printSkippedSummary(skipped: SkipRecord[], verbose: boolean): vo
         lines.push(chalk.dim(`  ${count} under ${label}`));
       }
       if (buckets.length > 8) {
-        lines.push(chalk.dim(`  … and ${buckets.length - 8} more location group(s)`));
+        lines.push(chalk.dim(`  … and ${pluralize(buckets.length - 8, "more location group")}`));
       }
     }
-    log.message(lines);
+    console.log(lines.join("\n"));
     return;
   }
 
   const sample = skipped.slice(0, 12);
   lines.push("", chalk.dim("Paths:"));
   for (const entry of sample) {
-    lines.push(chalk.dim(`  ${entry.path} (${formatSkipReasonShort(entry.reason)})`));
+    for (const line of wrapText(
+      `  ${entry.path} (${formatSkipReasonShort(entry.reason)})`,
+      Math.max(20, terminalWidth() - 2),
+    )) {
+      lines.push(chalk.dim(line));
+    }
   }
   if (skipped.length > sample.length) {
     lines.push(
@@ -81,7 +86,7 @@ export function printSkippedSummary(skipped: SkipRecord[], verbose: boolean): vo
       ),
     );
   }
-  log.message(lines);
+  console.log(lines.join("\n"));
 }
 
 export function summarizeSkippedInline(skipped: SkipRecord[]): string {
@@ -98,7 +103,7 @@ export function summarizeSkippedInline(skipped: SkipRecord[]): string {
     home,
   );
 
-  let line = `Safety filters skipped ${skipped.length} path(s) (${parts.join(", ")}).`;
+  let line = `Safety filters skipped ${pluralize(skipped.length, "path")} (${parts.join(", ")}).`;
   if (top) {
     line += ` Largest group under ${top}.`;
   }
@@ -162,7 +167,7 @@ function formatSkipReasonShort(reason: string): string {
 
   if (reason.startsWith("newer-than-")) {
     const age = reason.replace("newer-than-", "");
-    return `retention (${age})`;
+    return `retention (<${age})`;
   }
 
   if (reason === "permission-denied") {

@@ -1,5 +1,6 @@
 import chalk from "chalk";
 import { ActionableError } from "../../core/actionable-error.js";
+import { terminalWidth, wrapText } from "../../core/format.js";
 import { printNextCommands } from "../../core/next-steps.js";
 import { runCommand } from "../../core/exec.js";
 import { CommandProgress } from "../../core/progress.js";
@@ -37,9 +38,9 @@ function printSpotlightSummary(
       : step.status === "failed" ? chalk.red("[fail]")
       : chalk.dim("[skip]");
 
-    console.log(`${marker} ${step.name} (${step.command})`);
+    console.log(`${marker} ${wrapText(`${step.name} (${step.command})`, Math.max(20, terminalWidth() - 2)).join("\n")}`);
     for (const detail of step.details.slice(0, 3)) {
-      console.log(chalk.dim(`  - ${detail}`));
+      console.log(chalk.dim(wrapText(`  - ${detail}`, Math.max(20, terminalWidth() - 2)).join("\n")));
     }
   }
 }

@@ -1,13 +1,14 @@
-import boxen from "boxen";
 import chalk from "chalk";
+import { compactPath, terminalRule, terminalWidth, wrapText } from "../../core/format.js";
+import { boundedBox } from "../../core/task-ui.js";
 
-const RULE = chalk.dim("─".repeat(52));
+const RULE = () => chalk.dim(terminalRule(52));
 
 export function printNetFixBanner(dryRun: boolean): void {
   const mode = dryRun ? chalk.yellow(" dry-run ") : chalk.cyan(" live ");
   console.log(
     "\n" +
-      boxen(
+      boundedBox(
         [
           chalk.bold.white("your net fix"),
           "",
@@ -33,17 +34,12 @@ export function printNetFixBanner(dryRun: boolean): void {
 
 export function printNetFixPipelineHint(): void {
   console.log(chalk.bold.cyan("\n==> ") + chalk.bold.white("Repair pipeline"));
-  console.log(RULE);
-  console.log(
-    `  ${chalk.green("1")} ${chalk.bold("Sudo")}  ${chalk.dim("→")}  ` +
-      `${chalk.green("2")} ${chalk.bold("Route / iface")}  ${chalk.dim("→")}  ` +
-      `${chalk.green("3")} ${chalk.bold("ARP")}  ${chalk.dim("→")}  ` +
-      `${chalk.green("4")} ${chalk.bold("DNS")}  ${chalk.dim("→")}  ` +
-      `${chalk.green("5")} ${chalk.bold("mDNS")}  ${chalk.dim("→")}  ` +
-      `${chalk.green("6")} ${chalk.bold("DHCP")}  ${chalk.dim("→")}  ` +
-      `${chalk.green("7")} ${chalk.bold("Wi‑Fi")}`,
-  );
-  console.log(RULE);
+  console.log(RULE());
+  const pipeline = "1 Sudo → 2 Route / iface → 3 ARP → 4 DNS → 5 mDNS → 6 DHCP → 7 Wi‑Fi";
+  for (const line of wrapText(pipeline, Math.max(20, terminalWidth() - 4))) {
+    console.log(chalk.dim(`  ${line}`));
+  }
+  console.log(RULE());
 }
 
 export interface NetPlistTarget {
@@ -55,7 +51,7 @@ export function printNetResetBanner(dryRun: boolean): void {
   const mode = dryRun ? chalk.yellow(" dry-run ") : chalk.hex("#e74c3c")(" live ");
   console.log(
     "\n" +
-      boxen(
+      boundedBox(
         [
           chalk.bold.white("your net reset"),
           "",
@@ -78,14 +74,16 @@ export function printNetResetBanner(dryRun: boolean): void {
 
 export function printNetResetPlistTargets(targets: NetPlistTarget[]): void {
   console.log(chalk.bold.cyan("\n==> ") + chalk.bold.white("Plist scope"));
-  console.log(RULE);
+  console.log(RULE());
   for (const target of targets) {
-    const tag = target.optional ? chalk.dim("  (optional on newer macOS)") : "";
-    console.log(
-      `${chalk.dim("  ▸")} ${chalk.white(target.path)}${tag}`,
-    );
+    const raw = `${compactPath(target.path)}${target.optional ? "  (optional on newer macOS)" : ""}`;
+    const lines = wrapText(raw, Math.max(20, terminalWidth() - 8));
+    console.log(`${chalk.dim("  ▸")} ${chalk.white(lines[0] ?? "")}`);
+    for (const line of lines.slice(1)) {
+      console.log(`      ${chalk.white(line)}`);
+    }
   }
-  console.log(RULE);
+  console.log(RULE());
 }
 
 export function printNetBackupFooter(args: {
@@ -99,7 +97,7 @@ export function printNetBackupFooter(args: {
   if (backupDirMaterialized) {
     console.log(
       "\n" +
-        boxen(
+        boundedBox(
           [
             chalk.bold.white("Backup"),
             "",
@@ -125,7 +123,7 @@ export function printNetBackupFooter(args: {
   if (dryRun && backupPlanned) {
     console.log(
       "\n" +
-        boxen(
+        boundedBox(
           [
             chalk.bold.yellow("Dry-run"),
             "",
@@ -149,7 +147,7 @@ export function printNetBackupFooter(args: {
 export function printNetFixSuccess(): void {
   console.log(
     "\n" +
-      boxen(
+      boundedBox(
         chalk.green(
           "Repair complete. Wi‑Fi or Ethernet may take a few seconds to settle.",
         ),
@@ -168,7 +166,7 @@ export function printNetFixSuccess(): void {
 export function printNetResetSuccess(): void {
   console.log(
     "\n" +
-      boxen(chalk.green("Network reset completed."), {
+      boundedBox(chalk.green("Network reset completed."), {
         title: chalk.bold.white(" done "),
         titleAlignment: "left",
         borderStyle: "round",

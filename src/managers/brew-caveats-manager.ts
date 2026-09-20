@@ -1,5 +1,5 @@
-import boxen from "boxen";
 import chalk from "chalk";
+import { boundedBox } from "../core/task-ui.js";
 
 export interface BrewCaveatNotice {
   blocks: string[][];
@@ -207,7 +207,7 @@ export function printBrewCaveatGuidance(
   ];
 
   console.log(
-    boxen(lines.join("\n"), {
+    boundedBox(lines.join("\n"), {
       title: chalk.bold.white(` ${title} `),
       titleAlignment: "left",
       borderStyle: "round",

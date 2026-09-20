@@ -1,14 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import chalk from "chalk";
-import { log } from "@clack/prompts";
 import {
   filterToAncestorRoots,
   pathSizesFast,
 } from "../../core/fs-utils.js";
 import { confirmAction, panel } from "../../core/task-ui.js";
 import { CommandProgress } from "../../core/progress.js";
-import { bytesToHuman } from "../../core/format.js";
+import { bytesToHuman, pluralize } from "../../core/format.js";
 import type { CleanerOptions, ScanResult } from "../../core/types.js";
 import { undoManager } from "../../core/undo-manager.js";
 import { getProjectArtifactSkipReason } from "./cleaner-project-guard.js";
@@ -135,30 +134,30 @@ export async function executeCleaner(
   );
 
   const eligibleBytes = candidates.reduce((sum, candidate) => sum + candidate.bytes, 0);
-  log.info(
-    `Eligible after safety checks: ${candidates.length} path(s), ${bytesToHuman(eligibleBytes)}`,
-  );
+  console.log(chalk.cyan(
+    `Eligible after safety checks: ${pluralize(candidates.length, "path")}, ${bytesToHuman(eligibleBytes)}`,
+  ));
 
   if (!candidates.length) {
-    log.warn("No eligible cleanup candidates after safety checks.");
+    console.log(chalk.yellow("No eligible cleanup candidates after safety checks."));
     if (options.verbose) {
       printSkippedBreakdown(skipped);
     } else {
-      log.message(chalk.dim(summarizeSkippedInline(skipped)));
+      console.log(chalk.dim(summarizeSkippedInline(skipped)));
     }
     return;
   }
 
-  log.message(
-    chalk.dim(`Retention policy: risky targets older than ${policy.olderThanDays} day(s).`),
+  console.log(
+    chalk.dim(`Retention policy: targets must be older than ${policy.olderThanDays} days.`),
   );
   const approved = await confirmAction(
-    `Move ${candidates.length} path(s) to the undo backup in ${options.mode.toUpperCase()} mode?`,
+    `Move ${pluralize(candidates.length, "path")} to the undo backup in ${options.mode.toUpperCase()} mode?`,
     Boolean(options.yes),
   );
 
   if (!approved) {
-    log.message(chalk.yellow("Cancelled."));
+    console.log(chalk.yellow("Cancelled."));
     return;
   }
 
@@ -191,11 +190,9 @@ export async function executeCleaner(
   const reclaimedLabel = options.dryRun ? "Potential reclaim" : "Backup size";
 
   const summaryBody = [
-    chalk.bold.white(`${actionWord}: ${deletedCount} path(s)`),
-    chalk.gray(`Not deleted (skipped earlier): ${skippedCount} path(s)`),
-    chalk.gray(
-      `Retention policy: risky targets older than ${policy.olderThanDays} day(s)`,
-    ),
+    chalk.bold.white(`${actionWord}: ${pluralize(deletedCount, "path")}`),
+    chalk.gray(`Skipped by safety checks: ${pluralize(skippedCount, "path")}`),
+    chalk.gray(`Retention: targets must be older than ${policy.olderThanDays} days`),
     "",
     chalk.cyan.bold(`${reclaimedLabel}: ${bytesToHuman(reclaimedBytes)}`),
   ];

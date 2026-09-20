@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import chalk from "chalk";
 import { runCommand } from "../../core/exec.js";
-import { bytesToHuman } from "../../core/format.js";
+import { bytesToHuman, fitText, pluralize, terminalWidth, visibleWidth } from "../../core/format.js";
 import { pathSizeFast } from "../../core/fs-utils.js";
 import { CommandProgress } from "../../core/progress.js";
 
@@ -220,7 +220,7 @@ async function getPathSizesBatch(
 }
 
 function printTree(node: SpaceNode, prefix: string): void {
-  console.log(`${prefix}${node.name} (${bytesToHuman(node.bytes)})`);
+  console.log(treeRow(prefix, "", node.name, node.bytes));
 
   const children = node.children.slice(0, MAX_CHILDREN_RENDER);
   children.forEach((child, index) => {
@@ -228,13 +228,15 @@ function printTree(node: SpaceNode, prefix: string): void {
     const branch = isLast ? "└── " : "├── ";
     const nextPrefix = `${prefix}${isLast ? "    " : "│   "}`;
 
-    console.log(
-      `${prefix}${branch}${child.name} (${bytesToHuman(child.bytes)})`,
-    );
+    console.log(treeRow(prefix, branch, child.name, child.bytes));
     if (child.children.length > 0) {
       printTreeChildren(child, nextPrefix);
     }
   });
+
+  if (node.children.length > children.length) {
+    console.log(`${prefix}… and ${pluralize(node.children.length - children.length, "more entry")}`);
+  }
 }
 
 function printTreeChildren(node: SpaceNode, prefix: string): void {
@@ -242,10 +244,20 @@ function printTreeChildren(node: SpaceNode, prefix: string): void {
   children.forEach((child, index) => {
     const isLast = index === children.length - 1;
     const branch = isLast ? "└── " : "├── ";
-    console.log(
-      `${prefix}${branch}${child.name} (${bytesToHuman(child.bytes)})`,
-    );
+    console.log(treeRow(prefix, branch, child.name, child.bytes));
   });
+  if (node.children.length > children.length) {
+    console.log(`${prefix}… and ${pluralize(node.children.length - children.length, "more entry")}`);
+  }
+}
+
+function treeRow(prefix: string, branch: string, name: string, bytes: number): string {
+  const suffix = ` (${bytesToHuman(bytes)})`;
+  const available = Math.max(
+    8,
+    terminalWidth() - visibleWidth(prefix) - visibleWidth(branch) - visibleWidth(suffix),
+  );
+  return `${prefix}${branch}${fitText(name, available)}${suffix}`;
 }
 
 async function mapLimit<T, R>(

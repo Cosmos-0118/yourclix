@@ -1,6 +1,5 @@
 import chalk from "chalk";
 import {
-  log,
   S_STEP_CANCEL,
   S_STEP_ERROR,
   S_STEP_SUBMIT,
@@ -31,7 +30,7 @@ export class CommandProgress {
     private readonly totalSteps: number,
   ) {
     if (title.trim().length > 0) {
-      log.message(chalk.bold(this.title));
+      console.log(chalk.bold(this.title));
     }
   }
 

@@ -2,7 +2,14 @@ import os from "node:os";
 import path from "node:path";
 import chalk from "chalk";
 import { CommandProgress } from "../../core/progress.js";
-import { bytesToHuman } from "../../core/format.js";
+import {
+  bytesToHuman,
+  compactPath,
+  pluralize,
+  terminalWidth,
+  wrapText,
+} from "../../core/format.js";
+import { panel } from "../../core/task-ui.js";
 import { pathSizeFast } from "../../core/fs-utils.js";
 import { confirm } from "../../core/prompt.js";
 import { undoManager } from "../../core/undo-manager.js";
@@ -46,17 +53,16 @@ export async function devClean(dryRun = false, yes = false): Promise<void> {
   }
 
   if (found.truncated) {
-    console.log(
-      chalk.yellow(
-        `Scan limit reached (${DEV_CLEAN_MAX_TARGETS} node_modules folders). Restricting scope to keep memory usage stable.`,
-      ),
-    );
+    console.log(chalk.yellow(wrapText(
+      `Scan limit reached (${DEV_CLEAN_MAX_TARGETS} node_modules folders). Restricting scope to keep memory usage stable.`,
+      Math.max(20, terminalWidth() - 2),
+    ).join("\n")));
   }
 
   if (protectedFiltered.skippedProtected > 0) {
     console.log(
       chalk.yellow(
-        `Skipped ${protectedFiltered.skippedProtected} protected node_modules target(s) required by current CLI/workspace.`,
+        `Skipped ${pluralize(protectedFiltered.skippedProtected, "protected node_modules target")} required by current CLI/workspace.`,
       ),
     );
   }
@@ -73,21 +79,19 @@ export async function devClean(dryRun = false, yes = false): Promise<void> {
   const xcodeBytes = xcodeDerivedData.reduce((sum, entry) => sum + entry.bytes, 0);
   const otherBytes = otherTargets.reduce((sum, entry) => sum + entry.bytes, 0);
 
-  console.log(chalk.bold("Developer cleanup targets"));
-  console.log(`- Total: ${targetInfos.length}`);
-  console.log(
-    `- node_modules: ${nodeModules.length} (${bytesToHuman(nodeModulesBytes)})`,
-  );
-  console.log(
-    `- Xcode DerivedData: ${xcodeDerivedData.length} (${bytesToHuman(xcodeBytes)})`,
-  );
+  const targetSummary = [
+    `Total: ${pluralize(targetInfos.length, "target")}`,
+    `node_modules: ${pluralize(nodeModules.length, "folder")} (${bytesToHuman(nodeModulesBytes)})`,
+    `Xcode DerivedData: ${pluralize(xcodeDerivedData.length, "folder")} (${bytesToHuman(xcodeBytes)})`,
+  ];
   if (otherTargets.length > 0) {
-    console.log(`- Other: ${otherTargets.length} (${bytesToHuman(otherBytes)})`);
+    targetSummary.push(`Other: ${pluralize(otherTargets.length, "target")} (${bytesToHuman(otherBytes)})`);
   }
-  console.log(chalk.cyan(`Discovered size: ${bytesToHuman(totalBytes)}`));
+  targetSummary.push(`Discovered size: ${bytesToHuman(totalBytes)}`);
   if (!dryRun) {
-    console.log(chalk.dim("Disk space remains in the undo backup until it is pruned."));
+    targetSummary.push("Disk space remains in the undo backup until it is pruned.");
   }
+  panel(targetSummary.join("\n"), "Developer cleanup targets", (line) => chalk.green(line));
 
   const largestTargets = [...targetInfos]
     .sort((a, b) => b.bytes - a.bytes)
@@ -95,7 +99,7 @@ export async function devClean(dryRun = false, yes = false): Promise<void> {
   if (largestTargets.length > 0) {
     console.log(chalk.dim("Largest targets"));
     for (const target of largestTargets) {
-      console.log(chalk.dim(`- ${target.path} (${bytesToHuman(target.bytes)})`));
+      printTargetLine(target.path, target.bytes);
     }
   }
 
@@ -103,13 +107,13 @@ export async function devClean(dryRun = false, yes = false): Promise<void> {
   if (preview.length > 0) {
     console.log(chalk.dim("Sample targets (first 20)"));
     for (const target of preview) {
-      console.log(chalk.dim(`- ${target.path} (${bytesToHuman(target.bytes)})`));
+      printTargetLine(target.path, target.bytes);
     }
   }
 
   if (targetInfos.length > preview.length) {
     console.log(
-      chalk.dim(`...and ${targetInfos.length - preview.length} more target(s).`),
+      chalk.dim(`… and ${pluralize(targetInfos.length - preview.length, "more target")}.`),
     );
   }
 
@@ -129,7 +133,7 @@ export async function devClean(dryRun = false, yes = false): Promise<void> {
   let backupId: string | null = null;
   let backupWarnings: string[] = [];
   await progress.step(
-    `Moving ${targetInfos.length} filesystem targets to undo backup`,
+    `Moving ${pluralize(targetInfos.length, "filesystem target")} to undo backup`,
     async () => {
       if (dryRun) {
         removedCount = targetInfos.length;
@@ -149,28 +153,30 @@ export async function devClean(dryRun = false, yes = false): Promise<void> {
   );
 
   const actionWord = dryRun ? "Would remove" : "Moved to undo backup";
-  console.log(chalk.bold("Developer cleanup summary"));
-  console.log(chalk.green(`- ${actionWord}: ${removedCount} targets`));
-  console.log(
-    chalk.cyan(`- ${dryRun ? "Potential reclaim" : "Backup size"}: ${bytesToHuman(reclaimedBytes)}`),
-  );
+  const summary = [
+    `${actionWord}: ${pluralize(removedCount, "target")}`,
+    `${dryRun ? "Potential reclaim" : "Backup size"}: ${bytesToHuman(reclaimedBytes)}`,
+  ];
   if (!dryRun && backupId) {
-    console.log(
-      chalk.yellow("- Disk space is not freed until the undo backup is pruned."),
-    );
-    console.log(chalk.green(`- Backup: ~/.your-backups/${backupId}`));
-    console.log(chalk.dim(`- Undo: your undo restore ${backupId}`));
+    summary.push("Disk space is not freed until the undo backup is pruned.");
+    summary.push(`Backup: ~/.your-backups/${backupId}`);
+    summary.push(`Undo: your undo restore ${backupId}`);
   }
+  panel(summary.join("\n"), "Developer cleanup complete", (line) => chalk.green(line));
 
   if (backupWarnings.length > 0) {
     console.log(chalk.yellow("Backup warnings:"));
     for (const warning of backupWarnings.slice(0, 10)) {
-      console.log(chalk.dim(`- ${warning}`));
+      console.log(chalk.dim(wrapText(`- ${warning}`, Math.max(20, terminalWidth() - 2)).join("\n")));
     }
     if (backupWarnings.length > 10) {
-      console.log(chalk.dim(`...and ${backupWarnings.length - 10} more warning(s).`));
+      console.log(chalk.dim(`… and ${pluralize(backupWarnings.length - 10, "more warning")}.`));
     }
   }
 
-  console.log(chalk.green("Developer cleanup complete."));
+}
+
+function printTargetLine(targetPath: string, bytes: number): void {
+  const line = `- ${compactPath(targetPath)} (${bytesToHuman(bytes)})`;
+  console.log(chalk.dim(wrapText(line, Math.max(20, terminalWidth() - 2)).join("\n")));
 }

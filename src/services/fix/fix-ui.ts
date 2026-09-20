@@ -1,14 +1,15 @@
-import boxen from "boxen";
 import chalk from "chalk";
 import type { Issue } from "../../core/types.js";
+import { boundedBox } from "../../core/task-ui.js";
+import { pluralize, terminalRule, terminalWidth, wrapAnsiText } from "../../core/format.js";
 
-const RULE = chalk.dim("─".repeat(56));
+const RULE = () => chalk.dim(terminalRule(56));
 
 export function printFixBanner(dryRun: boolean): void {
   const mode = dryRun ? chalk.yellow(" dry-run ") : chalk.green(" apply ");
   console.log(
     "\n" +
-      boxen(
+      boundedBox(
         [
           chalk.bold.white("your fix"),
           "",
@@ -33,12 +34,12 @@ export function printFixPlan(
   actions: { symlinks: number; brewUpgrade: boolean },
 ): void {
   console.log(chalk.bold.cyan("\n==> ") + chalk.bold.white("Remediation plan"));
-  console.log(RULE);
+  console.log(RULE());
 
   const rows: string[] = [];
   if (actions.symlinks > 0) {
     rows.push(
-      `${chalk.green("●")}  ${chalk.bold("Broken symlinks")}  ${chalk.dim("→")}  remove ${actions.symlinks} path(s) (diagnosis scope only)`,
+      `${chalk.green("●")}  ${chalk.bold("Broken symlinks")}  ${chalk.dim("→")}  remove ${pluralize(actions.symlinks, "path")} (diagnosis scope only)`,
     );
   }
   if (actions.brewUpgrade) {
@@ -51,8 +52,12 @@ export function printFixPlan(
     rows.push(chalk.dim("No automated actions mapped for current safe issues."));
   }
 
-  console.log(rows.join("\n"));
-  console.log(RULE);
+  for (const row of rows) {
+    for (const line of wrapAnsiText(row, Math.max(20, terminalWidth() - 2))) {
+      console.log(line);
+    }
+  }
+  console.log(RULE());
   console.log(
     chalk.dim(
       "Issues considered: ",
@@ -77,13 +82,14 @@ export function printFixActionMatrix(issues: Issue[]): void {
       : sev === "warn" ? chalk.yellow
       : chalk.cyan;
 
-    return `  ${sevColor(`[${sev}]`)}  ${chalk.bold(issue.title.slice(0, 42))}${issue.title.length > 42 ? "…" : ""}  ${chalk.dim("→")}  ${fix}`;
+    const title = issue.title.length > 42 ? `${issue.title.slice(0, 41)}…` : issue.title;
+    return `  ${sevColor(`[${sev}]`)}  ${chalk.bold(title)}  ${chalk.dim("→")}  ${fix}`;
   });
 
   console.log(chalk.bold.cyan("\n==> ") + chalk.bold.white("Issue → action matrix"));
-  console.log(RULE);
+  console.log(RULE());
   console.log(rows.join("\n"));
-  console.log(RULE);
+  console.log(RULE());
   console.log(
     chalk.dim(
       "Tip: network, disk, caches, and git identity stay manual — see suggested commands above.",
@@ -97,7 +103,7 @@ export function printFixSuccessFooter(dryRun: boolean): void {
   : "All remediation steps completed successfully.";
   console.log(
     "\n" +
-      boxen(chalk.green(msg), {
+      boundedBox(chalk.green(msg), {
         title: chalk.bold.white(" done "),
         titleAlignment: "left",
         padding: { left: 1, right: 1, top: 0, bottom: 0 },

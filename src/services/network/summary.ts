@@ -1,5 +1,6 @@
-import boxen from "boxen";
 import chalk from "chalk";
+import { boundedBox } from "../../core/task-ui.js";
+import { terminalWidth, wrapText } from "../../core/format.js";
 import type { NetworkStepResult } from "./types.js";
 
 export function printNetworkSummary(
@@ -26,7 +27,7 @@ export function printNetworkSummary(
 
   console.log(
     "\n" +
-      boxen(blocks.join("\n\n"), {
+      boundedBox(blocks.join("\n\n"), {
         title: chalk.bold.white(` ${title} · summary `),
         titleAlignment: "left",
         borderStyle: "round",
@@ -35,7 +36,7 @@ export function printNetworkSummary(
         margin: { top: 0, bottom: 0 },
       }),
   );
-  console.log(chalk.dim(`Full log: ${logPath}`));
+  console.log(chalk.dim(wrapText(`Full log: ${logPath}`, Math.max(20, terminalWidth() - 2)).join("\n")));
 }
 
 export function hasCriticalFailure(steps: NetworkStepResult[]): boolean {

@@ -1,6 +1,5 @@
 import path from "node:path";
 import chalk from "chalk";
-import { log } from "@clack/prompts";
 import fg from "fast-glob";
 import { bytesToHuman, pad } from "../../core/format.js";
 import { panel, startProgressBar } from "../../core/task-ui.js";
@@ -47,7 +46,7 @@ export async function scanCleanerTargets(
 
   bar.stop(`Scanned ${eligible.length} categories`);
   for (const warning of largeResultWarnings) {
-    log.warn(warning);
+    console.log(chalk.yellow(warning));
   }
 
   return dedupeCleanerScanResults(results);
@@ -107,7 +106,7 @@ export async function dedupeCleanerScanResults(
 
 export function printCleanerResults(results: ScanResult[]): void {
   if (!results.length) {
-    log.message(chalk.green("No cleanup candidates found."));
+    console.log(chalk.green("No cleanup candidates found."));
     return;
   }
 
@@ -126,5 +125,5 @@ export function printCleanerResults(results: ScanResult[]): void {
   rows.push(`${pad("Discovered size", labelWidth)}${chalk.bold.cyan(bytesToHuman(total))}`);
 
   panel(rows.join("\n"), "Scan summary", (line) => chalk.dim(line));
-  log.message(chalk.dim("Eligibility is calculated during cleanup preflight."));
+  console.log(chalk.dim("Eligibility is calculated during cleanup preflight."));
 }

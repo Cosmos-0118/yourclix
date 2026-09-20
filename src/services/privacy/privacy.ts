@@ -3,6 +3,7 @@ import path from "node:path";
 import chalk from "chalk";
 import { ActionableError } from "../../core/actionable-error.js";
 import { runCommand } from "../../core/exec.js";
+import { compactPath, pluralize, terminalWidth, wrapText } from "../../core/format.js";
 import { CommandProgress } from "../../core/progress.js";
 import { confirm } from "../../core/prompt.js";
 import { removePath } from "../../core/fs-utils.js";
@@ -57,7 +58,7 @@ function expandTargets(targets: string[]): string[] {
 
 export async function privacyClean(dryRun = false, yes = false): Promise<void> {
   const progress = new CommandProgress("Privacy Cleanup", 4);
-  console.log(chalk.bold("Privacy cleanup targets:"));
+  console.log(chalk.bold("Privacy cleanup targets"));
 
   const browsers = await progress.step("Detecting installed browsers", async () =>
     detectInstalledBrowsers(),
@@ -84,8 +85,9 @@ export async function privacyClean(dryRun = false, yes = false): Promise<void> {
     targets.filter((target) => !safariRunning || !target.includes("/Safari/History.db")),
   );
 
+  console.log(chalk.dim(`${pluralize(expanded.length, "target")} selected`));
   for (const target of expanded) {
-    console.log(`- ${target}`);
+    console.log(wrapText(`- ${compactPath(target)}`, Math.max(20, terminalWidth() - 2)).join("\n"));
   }
 
   const approved = await confirm("Proceed with privacy cleanup?", yes);
@@ -121,7 +123,7 @@ export async function privacyClean(dryRun = false, yes = false): Promise<void> {
 
         if (blocked.length > 0) {
           details.push(
-            `Permission denied for ${blocked.length} target(s):`,
+            `Permission denied for ${pluralize(blocked.length, "target")}:`,
             ...blocked.map((target) => `  ${target}`),
           );
         }

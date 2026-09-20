@@ -1,43 +1,56 @@
 import {
   box,
   confirm as clackConfirm,
-  intro,
   isCancel,
   isCI,
-  outro,
   progress as clackProgress,
   text as clackText,
 } from "@clack/prompts";
+import boxen, { type Options as BoxenOptions } from "boxen";
 import chalk from "chalk";
 import { askNumber as legacyAskNumber, confirm as legacyConfirm } from "./prompt.js";
-
-function visibleWidth(line: string): number {
-  // eslint-disable-next-line no-control-regex
-  return line.replace(/\x1b\[[0-9;]*m/g, "").length;
-}
+import { fitText, terminalWidth, visibleWidth } from "./format.js";
 
 /**
- * A bordered summary panel sized to its own content instead of clack's
- * `box`/`note`, which both default to stretching across the full terminal
- * width regardless of how short the content is. Computes a width *fraction*
- * (the only unit `box` accepts below 100%) from the longest visible line.
+ * A bordered summary panel sized to its own content. `auto` lets clack wrap
+ * long lines to the actual terminal width, while disabling its guide avoids a
+ * second vertical frame inside the command's output.
  */
 export function panel(
   content: string,
   title: string,
   formatBorder: (line: string) => string,
 ): void {
-  const lines = content.split("\n");
-  const longest = Math.max(
-    title.length,
-    ...lines.map(visibleWidth),
-    20,
-  );
-  const columns = process.stdout.columns || 80;
-  // Border + guide-bar + padding overhead clack adds around the content.
-  const fraction = Math.min(1, Math.max(0.25, (longest + 8) / columns));
+  box(content, title, {
+    width: "auto",
+    withGuide: false,
+    contentPadding: 1,
+    titlePadding: 1,
+    formatBorder,
+  });
+}
 
-  box(content, title, { width: fraction, formatBorder });
+/** Render a boxen panel that never exceeds the current terminal width. */
+export function boundedBox(content: string, options: BoxenOptions = {}): string {
+  const padding = typeof options.padding === "number" ?
+    options.padding * 2
+    : (options.padding?.left ?? 0) + (options.padding?.right ?? 0);
+  const maxWidth = Math.max(3, terminalWidth() - 1);
+  const maxInnerWidth = Math.max(1, maxWidth - padding - 2);
+  const title = options.title && visibleWidth(options.title) > maxInnerWidth ?
+    fitText(options.title, maxInnerWidth)
+    : options.title;
+  const longest = Math.max(
+    1,
+    ...content.split("\n").map(visibleWidth),
+    ...(title ? [visibleWidth(title)] : []),
+  );
+  const width = Math.min(
+    maxWidth,
+    Math.max(3, longest + padding + 2),
+  );
+
+  return boxen(content, { ...options, title, width });
 }
 
 /**
@@ -55,18 +68,21 @@ export function interactive(): boolean {
 }
 
 /**
- * Frames a command with a clack intro/outro so every step, spinner, and
- * summary box printed inside `fn` reads as one continuous flow. On failure
- * `fn` is left to throw; the outro is skipped and the existing top-level
- * error handler takes over, matching every other command's failure path.
+ * Frames a command with a plain heading and trailing spacing so every step,
+ * spinner, and summary box printed inside `fn` reads as one continuous flow.
+ * On failure `fn` is left to throw and the existing top-level error handler
+ * takes over, matching every other command's failure path.
  */
 export async function withIntroOutro(
   title: string,
   fn: () => Promise<void>,
 ): Promise<void> {
-  intro(chalk.bold(title));
+  // A persistent clack guide around a command makes nested panels look like
+  // broken double borders. Keep the command heading, but let each component
+  // own its own layout.
+  console.log(chalk.bold(title));
   await fn();
-  outro();
+  console.log();
 }
 
 /**

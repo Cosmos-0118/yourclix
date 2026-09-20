@@ -1,6 +1,13 @@
 import chalk from "chalk";
 import { undoManager } from "../../core/undo-manager.js";
-import { bytesToHuman, pad } from "../../core/format.js";
+import {
+  bytesToHuman,
+  pad,
+  pluralize,
+  terminalRule,
+  terminalWidth,
+  wrapText,
+} from "../../core/format.js";
 import type { UndoOptions } from "../../core/types.js";
 
 /**
@@ -16,14 +23,17 @@ export async function listUndoHistory(): Promise<void> {
   }
 
   console.log(chalk.bold("Undo History"));
-  console.log(
-    pad("ID", 35) +
-      pad("Command", 15) +
-      pad("Files", 8) +
-      pad("Size", 10) +
-      "Date",
-  );
-  console.log("-".repeat(85));
+  const wide = terminalWidth() >= 100;
+  if (wide) {
+    console.log(
+      pad("ID", 35) +
+        pad("Command", 15) +
+        pad("Files", 8) +
+        pad("Size", 10) +
+        "Date",
+    );
+    console.log(terminalRule(85));
+  }
 
   for (const backup of backups) {
     const dateStr = new Date(backup.timestamp).toLocaleDateString("en-US", {
@@ -34,13 +44,20 @@ export async function listUndoHistory(): Promise<void> {
       minute: "2-digit",
     });
 
-    console.log(
-      pad(backup.id, 35) +
-        pad(backup.command, 15) +
-        pad(String(backup.filesCount), 8) +
-        pad(bytesToHuman(backup.byteSize), 10) +
-        dateStr,
-    );
+    if (wide) {
+      console.log(
+        pad(backup.id, 35) +
+          pad(backup.command, 15) +
+          pad(String(backup.filesCount), 8) +
+          pad(bytesToHuman(backup.byteSize), 10) +
+          dateStr,
+      );
+    } else {
+      console.log(wrapText(
+        `- ${backup.id} · ${backup.command} · ${backup.filesCount} files · ${bytesToHuman(backup.byteSize)} · ${dateStr}`,
+        Math.max(20, terminalWidth() - 2),
+      ).join("\n"));
+    }
   }
 
   const totalSize = await undoManager.getTotalBackupSize();
@@ -80,7 +97,7 @@ export async function pruneOldBackups(retentionDays: number): Promise<void> {
 
   console.log(
     chalk.green(
-      `✓ Pruned ${prunedCount} backup(s) older than ${retentionDays} days`,
+      `✓ Pruned ${pluralize(prunedCount, "backup")} older than ${retentionDays} days`,
     ),
   );
 }

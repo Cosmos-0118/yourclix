@@ -1,4 +1,5 @@
 import { runCommand } from "../../core/exec.js";
+import { pluralize } from "../../core/format.js";
 import { isSafeInterfaceName } from "./interface.js";
 import type { NetworkLogger, NetworkStepResult } from "./types.js";
 
@@ -10,7 +11,7 @@ function truncateCommandOutput(text: string, maxLines = MAX_DETAIL_LINES): strin
     return text;
   }
   const rest = lines.length - maxLines;
-  return `${lines.slice(0, maxLines).join("\n")}\n… (${rest} more line(s); see network log file for full output)`;
+  return `${lines.slice(0, maxLines).join("\n")}\n… ${pluralize(rest, "more line")} (see network log file for full output)`;
 }
 
 export async function runStepCommand(
