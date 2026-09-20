@@ -1,5 +1,6 @@
 import chalk from "chalk";
-import { box, log } from "@clack/prompts";
+import { log } from "@clack/prompts";
+import { panel } from "../../core/task-ui.js";
 import { CommandProgress } from "../../core/progress.js";
 import {
   getOutdatedPackages,
@@ -109,13 +110,9 @@ export async function brewStatus(): Promise<void> {
 
   printBrewSummary("your brew status", steps);
   if (outdated?.ok && (outdated.formulae.length > 0 || outdated.casks.length > 0)) {
-    console.log(
-      chalk.yellow(
-        `Outdated: ${[...outdated.formulae, ...outdated.casks].join(", ")}`,
-      ),
-    );
+    log.warn(`Outdated: ${[...outdated.formulae, ...outdated.casks].join(", ")}`);
   } else if (outdated?.ok) {
-    console.log(chalk.green("All installed formulae and casks are current."));
+    log.success("All installed formulae and casks are current.");
   }
 
   if (hasCriticalBrewFailure(steps)) {
@@ -183,7 +180,7 @@ export async function brewClean(dryRun = false): Promise<void> {
     throw new Error("One or more critical brew clean steps failed.");
   }
 
-  console.log(chalk.green("Brew cleanup complete."));
+  log.success("Brew cleanup complete.");
 }
 
 export async function brewUpgrade(
@@ -197,7 +194,7 @@ export async function brewUpgrade(
     env: { HOMEBREW_NO_AUTO_UPDATE: "1" },
   } as const;
 
-  box(
+  panel(
     [
       chalk.green("Formulae to upgrade     determined after metadata refresh"),
       chalk.magenta(
@@ -224,7 +221,7 @@ export async function brewUpgrade(
       ),
     ].join("\n"),
     "Plan",
-    { formatBorder: (line) => chalk.cyan(line) },
+    (line) => chalk.cyan(line),
   );
 
   const steps: BrewStepResult[] = [];
@@ -380,9 +377,9 @@ export async function brewUpgrade(
       ),
     ];
 
-    box(rows.join("\n"), dryRun ? "Planned targets" : "Upgrade targets", {
-      formatBorder: (line) => chalk.green(line),
-    });
+    panel(rows.join("\n"), dryRun ? "Planned targets" : "Upgrade targets", (line) =>
+      chalk.green(line),
+    );
   }
 
   printBrewSummary("your brew upgrade", steps);
@@ -390,7 +387,7 @@ export async function brewUpgrade(
     throw new Error("One or more critical brew upgrade steps failed.");
   }
 
-  console.log(chalk.green("Brew upgrade complete."));
+  log.success("Brew upgrade complete.");
 }
 
 export async function brewAutoremove(dryRun = false): Promise<void> {
@@ -445,7 +442,7 @@ export async function brewAutoremove(dryRun = false): Promise<void> {
   if (hasCriticalBrewFailure(steps)) {
     throw new Error("One or more critical brew autoremove steps failed.");
   }
-  console.log(chalk.green("Brew autoremove complete."));
+  log.success("Brew autoremove complete.");
 }
 
 export async function brewOptimize(dryRun = false): Promise<void> {
@@ -457,5 +454,5 @@ export async function brewOptimize(dryRun = false): Promise<void> {
   log.step("Post-cleanup doctor pass");
   await brewDoctor(dryRun);
 
-  console.log(chalk.green("Brew optimize completed."));
+  log.success("Brew optimize completed.");
 }

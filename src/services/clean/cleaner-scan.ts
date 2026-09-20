@@ -1,9 +1,9 @@
 import path from "node:path";
 import chalk from "chalk";
-import { box } from "@clack/prompts";
+import { log } from "@clack/prompts";
 import fg from "fast-glob";
 import { bytesToHuman, pad } from "../../core/format.js";
-import { startProgressBar } from "../../core/task-ui.js";
+import { panel, startProgressBar } from "../../core/task-ui.js";
 import { filterToAncestorRoots, sumPathSizesFast } from "../../core/fs-utils.js";
 import { getCleanerScanCategories } from "../../managers/clean-scan-manager.js";
 import type { CleanerOptions, ScanResult } from "../../core/types.js";
@@ -47,7 +47,7 @@ export async function scanCleanerTargets(
 
   bar.stop(`Scanned ${eligible.length} categories`);
   for (const warning of largeResultWarnings) {
-    console.log(chalk.yellow(warning));
+    log.warn(warning);
   }
 
   return dedupeCleanerScanResults(results);
@@ -107,20 +107,24 @@ export async function dedupeCleanerScanResults(
 
 export function printCleanerResults(results: ScanResult[]): void {
   if (!results.length) {
-    console.log(chalk.green("No cleanup candidates found."));
+    log.message(chalk.green("No cleanup candidates found."));
     return;
   }
 
+  const labelWidth =
+    Math.max(
+      ...results.map((result) => result.category.length),
+      "Discovered size".length,
+    ) + 2;
+
   const rows = results.map(
     (result) =>
-      `${pad(result.category, 24)} ${chalk.cyan(bytesToHuman(result.bytes))}  ${chalk.dim(`${result.paths.length} paths`)}`,
+      `${pad(result.category, labelWidth)}${chalk.cyan(bytesToHuman(result.bytes))}  ${chalk.dim(`${result.paths.length} paths`)}`,
   );
   const total = results.reduce((sum, item) => sum + item.bytes, 0);
   rows.push("");
-  rows.push(`${pad("Discovered size", 24)} ${chalk.bold.cyan(bytesToHuman(total))}`);
+  rows.push(`${pad("Discovered size", labelWidth)}${chalk.bold.cyan(bytesToHuman(total))}`);
 
-  box(rows.join("\n"), "Scan summary", {
-    formatBorder: (line) => chalk.dim(line),
-  });
-  console.log(chalk.dim("Eligibility is calculated during cleanup preflight."));
+  panel(rows.join("\n"), "Scan summary", (line) => chalk.dim(line));
+  log.message(chalk.dim("Eligibility is calculated during cleanup preflight."));
 }

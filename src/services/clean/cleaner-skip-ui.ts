@@ -1,6 +1,7 @@
 import os from "node:os";
 import path from "node:path";
 import chalk from "chalk";
+import { log } from "@clack/prompts";
 import type { HeuristicSkipRecord } from "./clean-heuristics.js";
 
 export type SkipRecord = HeuristicSkipRecord;
@@ -26,22 +27,23 @@ export function getSkipReason(error: unknown): string {
   return err.message || "unknown";
 }
 
-export function printSkippedBreakdown(skipped: SkipRecord[]): void {
-  if (skipped.length === 0) {
-    return;
-  }
-
+function reasonBreakdownLines(skipped: SkipRecord[]): string[] {
   const reasonCounts = new Map<string, number>();
   for (const entry of skipped) {
     reasonCounts.set(entry.reason, (reasonCounts.get(entry.reason) ?? 0) + 1);
   }
 
-  console.log(chalk.bold("\nSkipped breakdown"));
-  for (const [reason, count] of [...reasonCounts.entries()].sort(
-    (a, b) => b[1] - a[1],
-  )) {
-    console.log(`  • ${formatSkipReasonShort(reason)}: ${count}`);
+  return [...reasonCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([reason, count]) => `${chalk.dim("•")} ${formatSkipReasonShort(reason)}: ${count}`);
+}
+
+export function printSkippedBreakdown(skipped: SkipRecord[]): void {
+  if (skipped.length === 0) {
+    return;
   }
+
+  log.message([chalk.bold("Skipped breakdown"), ...reasonBreakdownLines(skipped)]);
 }
 
 export function printSkippedSummary(skipped: SkipRecord[], verbose: boolean): void {
@@ -49,49 +51,37 @@ export function printSkippedSummary(skipped: SkipRecord[], verbose: boolean): vo
     return;
   }
 
-  const reasonCounts = new Map<string, number>();
-  for (const entry of skipped) {
-    reasonCounts.set(entry.reason, (reasonCounts.get(entry.reason) ?? 0) + 1);
-  }
-
-  console.log(chalk.bold("\nSkipped paths"));
-  for (const [reason, count] of [...reasonCounts.entries()].sort(
-    (a, b) => b[1] - a[1],
-  )) {
-    console.log(`  ${chalk.dim("•")} ${formatSkipReasonShort(reason)}: ${count}`);
-  }
+  const lines = [chalk.bold("Skipped paths"), ...reasonBreakdownLines(skipped)];
 
   if (!verbose) {
     const home = os.homedir();
     const buckets = bucketSkippedPaths(skipped, home);
     if (buckets.length > 0) {
-      console.log(chalk.dim("\n  By location (use --verbose for full paths):"));
+      lines.push("", chalk.dim("By location (use --verbose for full paths):"));
       for (const { label, count } of buckets.slice(0, 8)) {
-        console.log(chalk.dim(`    ${count} under ${label}`));
+        lines.push(chalk.dim(`  ${count} under ${label}`));
       }
       if (buckets.length > 8) {
-        console.log(
-          chalk.dim(`    … and ${buckets.length - 8} more location group(s)`),
-        );
+        lines.push(chalk.dim(`  … and ${buckets.length - 8} more location group(s)`));
       }
     }
+    log.message(lines);
     return;
   }
 
   const sample = skipped.slice(0, 12);
-  console.log(chalk.dim("\n  Paths:"));
+  lines.push("", chalk.dim("Paths:"));
   for (const entry of sample) {
-    console.log(
-      chalk.dim(`    ${entry.path} (${formatSkipReasonShort(entry.reason)})`),
-    );
+    lines.push(chalk.dim(`  ${entry.path} (${formatSkipReasonShort(entry.reason)})`));
   }
   if (skipped.length > sample.length) {
-    console.log(
+    lines.push(
       chalk.dim(
-        `    … ${skipped.length - sample.length} more (truncated; narrow scan with filters if needed)`,
+        `  … ${skipped.length - sample.length} more (truncated; narrow scan with filters if needed)`,
       ),
     );
   }
+  log.message(lines);
 }
 
 export function summarizeSkippedInline(skipped: SkipRecord[]): string {

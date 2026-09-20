@@ -1,5 +1,6 @@
 import chalk from "chalk";
-import { note } from "@clack/prompts";
+import { log } from "@clack/prompts";
+import { panel } from "../core/task-ui.js";
 import {
   runCommand,
   runCommandFilteredStream,
@@ -69,7 +70,7 @@ export function printBrewSummary(title: string, steps: BrewStepResult[]): void {
     return lines.join("\n");
   });
 
-  note(blocks.join("\n\n"), title);
+  panel(blocks.join("\n\n"), title, (line) => chalk.gray(line));
 }
 
 export function hasCriticalBrewFailure(steps: BrewStepResult[]): boolean {
@@ -93,15 +94,17 @@ export function printCleanupCandidates(output: string): void {
     );
 
   if (lines.length === 0) {
-    console.log(chalk.dim("No cleanup candidates detected."));
+    log.message(chalk.dim("No cleanup candidates detected."));
     return;
   }
 
-  console.log(chalk.bold("Cleanup candidates"));
-  lines.slice(0, 30).forEach((line) => console.log(`- ${line}`));
+  const shown = lines
+    .slice(0, 30)
+    .map((line) => chalk.dim(`- ${line}`));
   if (lines.length > 30) {
-    console.log(chalk.dim(`... and ${lines.length - 30} more lines`));
+    shown.push(chalk.dim(`... and ${lines.length - 30} more lines`));
   }
+  log.message([chalk.bold("Cleanup candidates"), ...shown]);
 }
 
 export function printCleanupResult(output: string, dryRun: boolean): void {
@@ -119,19 +122,19 @@ export function printCleanupResult(output: string, dryRun: boolean): void {
     );
 
   if (lines.length === 0) {
-    console.log(
-      chalk.dim(
-        dryRun ? "No files would be removed." : "No files were removed.",
-      ),
+    log.message(
+      chalk.dim(dryRun ? "No files would be removed." : "No files were removed."),
     );
     return;
   }
 
-  console.log(chalk.bold(dryRun ? "Would delete" : "Deleted items"));
-  lines.slice(0, 30).forEach((line) => console.log(`- ${line}`));
+  const shown = lines
+    .slice(0, 30)
+    .map((line) => chalk.dim(`- ${line}`));
   if (lines.length > 30) {
-    console.log(chalk.dim(`... and ${lines.length - 30} more lines`));
+    shown.push(chalk.dim(`... and ${lines.length - 30} more lines`));
   }
+  log.message([chalk.bold(dryRun ? "Would delete" : "Deleted items"), ...shown]);
 }
 
 /** Shared non-interactive defaults for every Homebrew subprocess. */

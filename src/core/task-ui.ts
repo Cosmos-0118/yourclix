@@ -1,4 +1,5 @@
 import {
+  box,
   confirm as clackConfirm,
   intro,
   isCancel,
@@ -9,6 +10,35 @@ import {
 } from "@clack/prompts";
 import chalk from "chalk";
 import { askNumber as legacyAskNumber, confirm as legacyConfirm } from "./prompt.js";
+
+function visibleWidth(line: string): number {
+  // eslint-disable-next-line no-control-regex
+  return line.replace(/\x1b\[[0-9;]*m/g, "").length;
+}
+
+/**
+ * A bordered summary panel sized to its own content instead of clack's
+ * `box`/`note`, which both default to stretching across the full terminal
+ * width regardless of how short the content is. Computes a width *fraction*
+ * (the only unit `box` accepts below 100%) from the longest visible line.
+ */
+export function panel(
+  content: string,
+  title: string,
+  formatBorder: (line: string) => string,
+): void {
+  const lines = content.split("\n");
+  const longest = Math.max(
+    title.length,
+    ...lines.map(visibleWidth),
+    20,
+  );
+  const columns = process.stdout.columns || 80;
+  // Border + guide-bar + padding overhead clack adds around the content.
+  const fraction = Math.min(1, Math.max(0.25, (longest + 8) / columns));
+
+  box(content, title, { width: fraction, formatBorder });
+}
 
 /**
  * True when it's safe to animate (spinners, progress bars, live task logs,

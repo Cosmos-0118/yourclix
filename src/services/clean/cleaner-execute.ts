@@ -1,12 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import chalk from "chalk";
-import { box } from "@clack/prompts";
+import { log } from "@clack/prompts";
 import {
   filterToAncestorRoots,
   pathSizesFast,
 } from "../../core/fs-utils.js";
-import { confirmAction } from "../../core/task-ui.js";
+import { confirmAction, panel } from "../../core/task-ui.js";
 import { CommandProgress } from "../../core/progress.js";
 import { bytesToHuman } from "../../core/format.js";
 import type { CleanerOptions, ScanResult } from "../../core/types.js";
@@ -135,30 +135,30 @@ export async function executeCleaner(
   );
 
   const eligibleBytes = candidates.reduce((sum, candidate) => sum + candidate.bytes, 0);
-  console.log(
-    chalk.cyan(
-      `Eligible after safety checks: ${candidates.length} path(s), ${bytesToHuman(eligibleBytes)}`,
-    ),
+  log.info(
+    `Eligible after safety checks: ${candidates.length} path(s), ${bytesToHuman(eligibleBytes)}`,
   );
 
   if (!candidates.length) {
-    console.log(chalk.yellow("No eligible cleanup candidates after safety checks."));
+    log.warn("No eligible cleanup candidates after safety checks.");
     if (options.verbose) {
       printSkippedBreakdown(skipped);
     } else {
-      console.log(chalk.dim(`  ${summarizeSkippedInline(skipped)}`));
+      log.message(chalk.dim(summarizeSkippedInline(skipped)));
     }
     return;
   }
 
+  log.message(
+    chalk.dim(`Retention policy: risky targets older than ${policy.olderThanDays} day(s).`),
+  );
   const approved = await confirmAction(
-    `Move ${candidates.length} path(s) to the undo backup in ${options.mode.toUpperCase()} mode? ` +
-      `(risky paths must be older than ${policy.olderThanDays} day(s))`,
+    `Move ${candidates.length} path(s) to the undo backup in ${options.mode.toUpperCase()} mode?`,
     Boolean(options.yes),
   );
 
   if (!approved) {
-    console.log(chalk.yellow("Cancelled."));
+    log.message(chalk.yellow("Cancelled."));
     return;
   }
 
@@ -214,17 +214,17 @@ export async function executeCleaner(
     );
   }
 
-  box(summaryBody.join("\n"), options.dryRun ? "Dry run" : "Cleanup complete", {
-    formatBorder: (line) => (options.dryRun ? chalk.blue(line) : chalk.green(line)),
-  });
+  panel(summaryBody.join("\n"), options.dryRun ? "Dry run" : "Cleanup complete", (line) =>
+    options.dryRun ? chalk.blue(line) : chalk.green(line),
+  );
 
   printSkippedSummary(skipped, Boolean(options.verbose));
 
   if (backupWarnings.length > 0) {
-    box(
+    panel(
       backupWarnings.map((w) => chalk.yellow(`• ${w}`)).join("\n"),
       "Warnings",
-      { formatBorder: (line) => chalk.yellow(line) },
+      (line) => chalk.yellow(line),
     );
   }
 }
