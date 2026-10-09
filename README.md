@@ -88,6 +88,11 @@ completion. One progress line is active at a time, including nested steps.
 Logs are appended above it; prompts and inherited child processes suspend
 animation. Completed commands return to the shell automatically.
 
+Section titles and active steps use cyan; completed steps use green, warnings
+amber, failures red, and skipped steps grey. Details are indented underneath
+their step. Sections and detailed steps have a blank line between them, while
+short successful steps stay compact. Set `NO_COLOR=1` to disable colours.
+
 Pipes, CI, dumb terminals, and redirected stdin use static output without
 cursor control or input prompts. Shell completion output stays raw. Ctrl-C
 cancels further work and interrupts subprocesses, with a bounded termination
