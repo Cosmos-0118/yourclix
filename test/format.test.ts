@@ -36,3 +36,13 @@ test("rules never exceed the terminal width budget", () => {
   assert.equal(terminalRule(72, 40).length, 38);
   assert.equal(terminalRule(72, 120).length, 72);
 });
+
+test("fits and wraps wide Unicode characters using terminal cell widths", () => {
+  assert.equal(visibleWidth("界界"), 4);
+  assert.equal(visibleWidth("e\u0301"), 1);
+  assert.equal(visibleWidth("👩‍💻"), 2);
+  assert.equal(visibleWidth(fitText("界界界", 5)), 5);
+  const wrapped = wrapAnsiText("界界界界", 5);
+  assert.ok(wrapped.every((line) => visibleWidth(line) <= 5));
+  assert.equal(wrapped.join(""), "界界界界");
+});

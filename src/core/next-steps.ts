@@ -1,3 +1,4 @@
+import { ui } from "./ui.js";
 import chalk from "chalk";
 import { terminalWidth, wrapText } from "./format.js";
 
@@ -6,8 +7,8 @@ export function printNextCommands(title: string, commands: string[]): void {
     return;
   }
 
-  console.log(chalk.bold(title));
+  ui.write(chalk.bold(title));
   for (const command of commands) {
-    console.log(chalk.dim(wrapText(`- ${command}`, Math.max(20, terminalWidth() - 2)).join("\n")));
+    ui.write(chalk.dim(wrapText(`- ${command}`, Math.max(20, terminalWidth() - 2)).join("\n")));
   }
 }

@@ -1,3 +1,4 @@
+import { ui } from "../../core/ui.js";
 import chalk from "chalk";
 import type { Issue } from "../../core/types.js";
 import { boundedBox } from "../../core/task-ui.js";
@@ -7,7 +8,7 @@ const RULE = () => chalk.dim(terminalRule(56));
 
 export function printFixBanner(dryRun: boolean): void {
   const mode = dryRun ? chalk.yellow(" dry-run ") : chalk.green(" apply ");
-  console.log(
+  ui.write(
     "\n" +
       boundedBox(
         [
@@ -33,8 +34,8 @@ export function printFixPlan(
   safeIssues: Issue[],
   actions: { symlinks: number; brewUpgrade: boolean },
 ): void {
-  console.log(chalk.bold.cyan("\n==> ") + chalk.bold.white("Remediation plan"));
-  console.log(RULE());
+  ui.write(chalk.bold.cyan("\n==> ") + chalk.bold.white("Remediation plan"));
+  ui.write(RULE());
 
   const rows: string[] = [];
   if (actions.symlinks > 0) {
@@ -54,11 +55,11 @@ export function printFixPlan(
 
   for (const row of rows) {
     for (const line of wrapAnsiText(row, Math.max(20, terminalWidth() - 2))) {
-      console.log(line);
+      ui.write(line);
     }
   }
-  console.log(RULE());
-  console.log(
+  ui.write(RULE());
+  ui.write(
     chalk.dim(
       "Issues considered: ",
     ) + safeIssues.map((i) => chalk.white(i.id)).join(chalk.dim(", ")),
@@ -86,11 +87,11 @@ export function printFixActionMatrix(issues: Issue[]): void {
     return `  ${sevColor(`[${sev}]`)}  ${chalk.bold(title)}  ${chalk.dim("→")}  ${fix}`;
   });
 
-  console.log(chalk.bold.cyan("\n==> ") + chalk.bold.white("Issue → action matrix"));
-  console.log(RULE());
-  console.log(rows.join("\n"));
-  console.log(RULE());
-  console.log(
+  ui.write(chalk.bold.cyan("\n==> ") + chalk.bold.white("Issue → action matrix"));
+  ui.write(RULE());
+  ui.write(rows.join("\n"));
+  ui.write(RULE());
+  ui.write(
     chalk.dim(
       "Tip: network, disk, caches, and git identity stay manual — see suggested commands above.",
     ),
@@ -101,7 +102,7 @@ export function printFixSuccessFooter(dryRun: boolean): void {
   const msg = dryRun ?
     "Dry run finished — no changes were made. Re-run without --dry-run to apply."
   : "All remediation steps completed successfully.";
-  console.log(
+  ui.write(
     "\n" +
       boundedBox(chalk.green(msg), {
         title: chalk.bold.white(" done "),

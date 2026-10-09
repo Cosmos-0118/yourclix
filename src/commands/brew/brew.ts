@@ -1,3 +1,4 @@
+import { ui } from "../../core/ui.js";
 import { Command } from "commander";
 import {
   brewClean,
@@ -7,17 +8,8 @@ import {
   brewStatus,
   brewUpgrade,
 } from "../../services/brew/brew.js";
-import {
-  brewAutoremoveDashboard,
-  brewCleanDashboard,
-  brewDoctorDashboard,
-  brewOptimizeDashboard,
-  brewStatusDashboard,
-  brewUpgradeDashboard,
-} from "../../services/brew/brew-dashboard.js";
 import { withGlobalOptions } from "../helpers.js";
-import { interactive, withIntroOutro } from "../../core/task-ui.js";
-import { runStepDashboard } from "../../tui/StepDashboard.js";
+import { withIntroOutro } from "../../core/task-ui.js";
 
 function titleFor(name: string, dryRun: boolean): string {
   return dryRun ? `your brew ${name} · dry run` : `your brew ${name}`;
@@ -31,9 +23,7 @@ export function registerBrew(program: Command): void {
   ).action(async (options) => {
     const dryRun = Boolean(options.dryRun);
     await withIntroOutro(titleFor("doctor", dryRun), () =>
-      interactive() ?
-        runStepDashboard((hooks) => brewDoctorDashboard(dryRun, hooks))
-      : brewDoctor(dryRun),
+      brewDoctor(dryRun),
     );
   });
 
@@ -41,9 +31,7 @@ export function registerBrew(program: Command): void {
     brew.command("status").description("Show Homebrew configuration and freshness"),
   ).action(async () => {
     await withIntroOutro("your brew status", () =>
-      interactive() ?
-        runStepDashboard((hooks) => brewStatusDashboard(hooks))
-      : brewStatus(),
+      brewStatus(),
     );
   });
 
@@ -52,9 +40,7 @@ export function registerBrew(program: Command): void {
   ).action(async (options) => {
     const dryRun = Boolean(options.dryRun);
     await withIntroOutro(titleFor("clean", dryRun), () =>
-      interactive() ?
-        runStepDashboard((hooks) => brewCleanDashboard(dryRun, hooks))
-      : brewClean(dryRun),
+      brewClean(dryRun),
     );
   });
 
@@ -65,9 +51,7 @@ export function registerBrew(program: Command): void {
   ).action(async (options) => {
     const dryRun = Boolean(options.dryRun);
     await withIntroOutro(titleFor("autoremove", dryRun), () =>
-      interactive() ?
-        runStepDashboard((hooks) => brewAutoremoveDashboard(dryRun, hooks))
-      : brewAutoremove(dryRun),
+      brewAutoremove(dryRun),
     );
   });
 
@@ -88,20 +72,18 @@ export function registerBrew(program: Command): void {
     const verbose = Boolean(options.verbose);
     const greedy = Boolean(options.greedy);
     await withIntroOutro(titleFor("upgrade", dryRun), () =>
-      interactive() ?
-        runStepDashboard((hooks) => brewUpgradeDashboard(dryRun, verbose, greedy, hooks))
-      : brewUpgrade(dryRun, verbose, greedy),
+      brewUpgrade(dryRun, verbose, greedy),
     );
   });
 
   withGlobalOptions(
-    brew.command("optimize").description("Run doctor, upgrade, and cleanup"),
+    brew.command("optimize").description("Run doctor, upgrade, and cleanup")
+      .option("--verbose", "show complete Homebrew output")
+      .option("--greedy", "include latest and auto-updating casks"),
   ).action(async (options) => {
     const dryRun = Boolean(options.dryRun);
     await withIntroOutro(titleFor("optimize", dryRun), () =>
-      interactive() ?
-        runStepDashboard((hooks) => brewOptimizeDashboard(dryRun, hooks))
-      : brewOptimize(dryRun),
+      brewOptimize(dryRun, ui, Boolean(options.verbose), Boolean(options.greedy)),
     );
   });
 }

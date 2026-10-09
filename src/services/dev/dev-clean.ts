@@ -1,3 +1,4 @@
+import { ui } from "../../core/ui.js";
 import os from "node:os";
 import path from "node:path";
 import chalk from "chalk";
@@ -53,14 +54,14 @@ export async function devClean(dryRun = false, yes = false): Promise<void> {
   }
 
   if (found.truncated) {
-    console.log(chalk.yellow(wrapText(
+    ui.write(chalk.yellow(wrapText(
       `Scan limit reached (${DEV_CLEAN_MAX_TARGETS} node_modules folders). Restricting scope to keep memory usage stable.`,
       Math.max(20, terminalWidth() - 2),
     ).join("\n")));
   }
 
   if (protectedFiltered.skippedProtected > 0) {
-    console.log(
+    ui.write(
       chalk.yellow(
         `Skipped ${pluralize(protectedFiltered.skippedProtected, "protected node_modules target")} required by current CLI/workspace.`,
       ),
@@ -97,7 +98,7 @@ export async function devClean(dryRun = false, yes = false): Promise<void> {
     .sort((a, b) => b.bytes - a.bytes)
     .slice(0, 10);
   if (largestTargets.length > 0) {
-    console.log(chalk.dim("Largest targets"));
+    ui.write(chalk.dim("Largest targets"));
     for (const target of largestTargets) {
       printTargetLine(target.path, target.bytes);
     }
@@ -105,26 +106,26 @@ export async function devClean(dryRun = false, yes = false): Promise<void> {
 
   const preview = targetInfos.slice(0, 20);
   if (preview.length > 0) {
-    console.log(chalk.dim("Sample targets (first 20)"));
+    ui.write(chalk.dim("Sample targets (first 20)"));
     for (const target of preview) {
       printTargetLine(target.path, target.bytes);
     }
   }
 
   if (targetInfos.length > preview.length) {
-    console.log(
+    ui.write(
       chalk.dim(`… and ${pluralize(targetInfos.length - preview.length, "more target")}.`),
     );
   }
 
   if (targetInfos.length === 0) {
-    console.log(chalk.green("No developer cleanup targets found."));
+    ui.write(chalk.green("No developer cleanup targets found."));
     return;
   }
 
   const approved = await confirm("Proceed with developer cleanup?", yes);
   if (!approved) {
-    console.log(chalk.yellow("Cancelled by user."));
+    ui.write(chalk.yellow("Cancelled by user."));
     return;
   }
 
@@ -165,12 +166,12 @@ export async function devClean(dryRun = false, yes = false): Promise<void> {
   panel(summary.join("\n"), "Developer cleanup complete", (line) => chalk.green(line));
 
   if (backupWarnings.length > 0) {
-    console.log(chalk.yellow("Backup warnings:"));
+    ui.write(chalk.yellow("Backup warnings:"));
     for (const warning of backupWarnings.slice(0, 10)) {
-      console.log(chalk.dim(wrapText(`- ${warning}`, Math.max(20, terminalWidth() - 2)).join("\n")));
+      ui.write(chalk.dim(wrapText(`- ${warning}`, Math.max(20, terminalWidth() - 2)).join("\n")));
     }
     if (backupWarnings.length > 10) {
-      console.log(chalk.dim(`… and ${pluralize(backupWarnings.length - 10, "more warning")}.`));
+      ui.write(chalk.dim(`… and ${pluralize(backupWarnings.length - 10, "more warning")}.`));
     }
   }
 
@@ -178,5 +179,5 @@ export async function devClean(dryRun = false, yes = false): Promise<void> {
 
 function printTargetLine(targetPath: string, bytes: number): void {
   const line = `- ${compactPath(targetPath)} (${bytesToHuman(bytes)})`;
-  console.log(chalk.dim(wrapText(line, Math.max(20, terminalWidth() - 2)).join("\n")));
+  ui.write(chalk.dim(wrapText(line, Math.max(20, terminalWidth() - 2)).join("\n")));
 }

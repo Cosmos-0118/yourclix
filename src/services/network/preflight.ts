@@ -1,3 +1,4 @@
+import { ui } from "../../core/ui.js";
 import chalk from "chalk";
 import { runCommand } from "../../core/exec.js";
 import type { NetworkLogger, NetworkStepResult } from "./types.js";
@@ -40,12 +41,12 @@ export async function ensureSudoReady(
     };
   }
 
-  console.log(
+  ui.write(
     chalk.yellow(
       "Administrator authentication is required for network operations.",
     ),
   );
-  console.log(chalk.dim("Please enter your macOS password when prompted."));
+  ui.write(chalk.dim("Please enter your macOS password when prompted."));
   const promptResult = await runCommand("sudo", ["-v"], {
     allowFailure: true,
     stdio: "inherit",

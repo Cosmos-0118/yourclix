@@ -1,3 +1,4 @@
+import { ui } from "../../core/ui.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -231,9 +232,9 @@ export async function installZshCompletion(force = false): Promise<void> {
     await fs.writeFile(ZSHRC, replaced, "utf8");
   }
 
-  console.log(chalk.green("Zsh completion installed."));
-  console.log("Run: source ~/.zshrc");
-  console.log("Then try: your <TAB>");
+  ui.write(chalk.green("Zsh completion installed."));
+  ui.write("Run: source ~/.zshrc");
+  ui.write("Then try: your <TAB>");
 }
 
 export async function uninstallZshCompletion(): Promise<void> {
@@ -255,8 +256,8 @@ export async function uninstallZshCompletion(): Promise<void> {
   }
 
   await fs.rm(COMPLETION_FILE, { force: true });
-  console.log(chalk.green("Zsh completion uninstalled."));
-  console.log("Run: source ~/.zshrc");
+  ui.write(chalk.green("Zsh completion uninstalled."));
+  ui.write("Run: source ~/.zshrc");
 }
 
 function escapeRegExp(input: string): string {

@@ -1,5 +1,5 @@
+import { ui } from "../../core/ui.js";
 import chalk from "chalk";
-import ora from "ora";
 import { runCommand } from "../../core/exec.js";
 import {
   analyzeBrewCaveats,
@@ -27,20 +27,24 @@ export async function installBatch(
   effective: EffectiveSetupConfig,
   logger: SetupLogger,
 ): Promise<{ status: StepStatus; details: string[] }> {
-  console.log(chalk.bold(`\n${title}`));
+  ui.write(chalk.bold(`\n${title}`));
   const details: string[] = [];
   let ok = 0;
   let failed = 0;
   let skipped = 0;
 
   for (const [index, target] of targets.entries()) {
-    const status = await installTarget(
-      target,
-      index + 1,
-      targets.length,
-      effective,
-      logger,
-    );
+    const result = await ui.task(`Install ${target.name}`, async () => {
+      const status = await installTarget(
+        target,
+        index + 1,
+        targets.length,
+        effective,
+        logger,
+      );
+      return { status };
+    });
+    const status = result.status;
     if (status === "success") {
       ok += 1;
     } else if (status === "failed") {
@@ -55,9 +59,7 @@ export async function installBatch(
   details.push(`Skipped: ${skipped}`);
 
   const status: StepStatus =
-    failed > 0 && ok === 0 ? "failed"
-    : failed > 0 ? "partial"
-    : "success";
+    failed > 0 && ok === 0 ? "failed" : failed > 0 ? "partial" : "success";
 
   return { status, details };
 }
@@ -70,11 +72,11 @@ async function installTarget(
   logger: SetupLogger,
 ): Promise<"success" | "failed" | "skipped"> {
   const prefix = `[${index}/${total}]`;
-  const spinner = ora(`${prefix} Checking ${target.name}`).start();
+  ui.note(`${prefix} Checking ${target.name}`);
 
   const installed = await isInstalled(target);
   if (!effective.dryRun && installed) {
-    spinner.succeed(chalk.green(`${prefix} ${target.name} already installed`));
+    ui.write(chalk.green(`${prefix} ${target.name} already installed`));
     await logger.log(
       "debug",
       `${target.type}:${target.name}: already installed`,
@@ -82,14 +84,14 @@ async function installTarget(
     return "skipped";
   }
 
-  spinner.text = `${prefix} Installing ${target.name}`;
+  ui.note(`${prefix} Installing ${target.name}`);
   const args =
-    target.type === "cask" ?
-      ["install", "--cask", target.name]
-    : ["install", target.name];
+    target.type === "cask"
+      ? ["install", "--cask", target.name]
+      : ["install", target.name];
 
   if (effective.dryRun) {
-    spinner.succeed(chalk.yellow(`${prefix} Would install ${target.name}`));
+    ui.write(chalk.yellow(`${prefix} Would install ${target.name}`));
     await logger.log("info", `${target.type}:${target.name}: would install`);
     return "success";
   }
@@ -99,9 +101,9 @@ async function installTarget(
   });
 
   if (result.code === 0) {
-    spinner.succeed(chalk.green(`${prefix} Installed ${target.name}`));
+    ui.write(chalk.green(`${prefix} Installed ${target.name}`));
     if (result.stdout.trim()) {
-      console.log(chalk.dim(result.stdout));
+      ui.write(chalk.dim(result.stdout));
     }
 
     const caveatNotice = analyzeBrewCaveats(
@@ -120,21 +122,21 @@ async function installTarget(
     return "success";
   }
 
-  spinner.fail(chalk.red(`${prefix} Failed to install ${target.name}`));
+  ui.write(chalk.red(`${prefix} Failed to install ${target.name}`));
   const detail =
     result.stderr.trim() ||
     result.stdout.trim() ||
     "No details returned by brew.";
-  console.log(chalk.yellow(detail));
+  ui.write(chalk.yellow(detail));
   await logger.log("error", `${target.type}:${target.name}: ${detail}`);
   return "failed";
 }
 
 async function isInstalled(target: InstallTarget): Promise<boolean> {
   const args =
-    target.type === "cask" ?
-      ["list", "--cask", "--versions", target.name]
-    : ["list", "--versions", target.name];
+    target.type === "cask"
+      ? ["list", "--cask", "--versions", target.name]
+      : ["list", "--versions", target.name];
   const result = await runCommand("brew", args, { allowFailure: true });
   return result.code === 0 && result.stdout.trim().length > 0;
 }

@@ -1,5 +1,5 @@
+import { ui } from "../core/ui.js";
 import chalk from "chalk";
-import { log } from "@clack/prompts";
 import { panel } from "../core/task-ui.js";
 import { terminalWidth, wrapText } from "../core/format.js";
 import {
@@ -20,6 +20,7 @@ export interface BrewStepResult {
   status: BrewStepStatus;
   critical: boolean;
   details: string[];
+  exitCode?: number;
 }
 
 export interface OutdatedPackages {
@@ -110,7 +111,7 @@ export function printCleanupCandidates(output: string): void {
   const lines = getCleanupCandidateLines(output);
 
   if (lines.length === 0) {
-    log.message(chalk.dim("No cleanup candidates detected."));
+    ui.message(chalk.dim("No cleanup candidates detected."));
     return;
   }
 
@@ -121,14 +122,14 @@ export function printCleanupCandidates(output: string): void {
   if (lines.length > 30) {
     shown.push(chalk.dim(`... and ${lines.length - 30} more lines`));
   }
-  log.message([chalk.bold("Cleanup candidates"), ...shown]);
+  ui.message([chalk.bold("Cleanup candidates"), ...shown]);
 }
 
 export function printCleanupResult(output: string, dryRun: boolean): void {
   const lines = getCleanupResultLines(output);
 
   if (lines.length === 0) {
-    log.message(
+    ui.message(
       chalk.dim(dryRun ? "No files would be removed." : "No files were removed."),
     );
     return;
@@ -141,7 +142,7 @@ export function printCleanupResult(output: string, dryRun: boolean): void {
   if (lines.length > 30) {
     shown.push(chalk.dim(`... and ${lines.length - 30} more lines`));
   }
-  log.message([chalk.bold(dryRun ? "Would delete" : "Deleted items"), ...shown]);
+  ui.message([chalk.bold(dryRun ? "Would delete" : "Deleted items"), ...shown]);
 }
 
 /** Shared non-interactive defaults for every Homebrew subprocess. */
@@ -233,10 +234,10 @@ function formatBrewStreamLine(
   if (/🍺/.test(line)) {
     return chalk.green(line);
   }
-  if (/\bError:\b/i.test(line)) {
+  if (/\bError:/i.test(line)) {
     return chalk.red(line);
   }
-  if (/\bWarning:\b/i.test(line)) {
+  if (/\bWarning:/i.test(line)) {
     return chalk.yellow(line);
   }
   if (/^(Fetching|Downloading|Verifying|Already|Built|Pouring|Upgrading|Reinstalling)\b/i.test(
@@ -279,25 +280,16 @@ export async function runBrewStep(
       },
     });
 
-  let detail: string;
-  if (useStream) {
-    detail =
-      result.code === 0 ?
-        "Finished successfully."
-      : `Failed with exit code ${result.code} (see output above).`;
-  } else {
-    detail =
-      result.stdout ||
-      result.stderr ||
-      (result.code === 0 ?
-        "Completed successfully (exit code 0, no output)."
-      : "Command failed with no output.");
-  }
+  const output = [result.stdout, result.stderr].filter(Boolean).join("\n");
+  const detail = useStream
+    ? result.code === 0 ? "Finished successfully." : `Exited with code ${result.code}.`
+    : output || (result.code === 0 ? "Completed successfully." : `Exited with code ${result.code}, no output.`);
 
   const caveatNotice = analyzeBrewCaveats(
     [result.stdout, result.stderr].filter(Boolean).join("\n"),
   );
   const details = [detail];
+  if (useStream && result.code !== 0) details.push(...getBrewFailureDetails(output));
   if (hasBrewCaveats(caveatNotice)) {
     const followUps = formatBrewCaveatFollowUps(caveatNotice);
     details.push(
@@ -312,6 +304,7 @@ export async function runBrewStep(
 
   return {
     name,
+    exitCode: result.code,
     command: commandLine(command, args),
     critical,
     status: result.code === 0 ? "success" : "failed",
@@ -405,4 +398,11 @@ export async function getOutdatedPackages(
       ),
     };
   }
+}
+
+/** Keep concrete errors plus their context even after live output is cleared. */
+export function getBrewFailureDetails(output: string): string[] {
+  const lines = output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const important = lines.filter((line) => /error:|fatal:|permission denied|not there|failed|checksum|locked|cannot|could not/i.test(line));
+  return [...new Set([...important, ...lines.slice(-12)])].slice(0, 20);
 }

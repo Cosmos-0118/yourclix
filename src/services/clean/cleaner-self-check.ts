@@ -1,3 +1,4 @@
+import { ui } from "../../core/ui.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -71,7 +72,7 @@ export async function runCleanerSelfCheck(
       }
     });
 
-    console.log(chalk.green("Cleaner self-check passed."));
+    ui.write(chalk.green("Cleaner self-check passed."));
   } finally {
     await fs.rm(testDir, { recursive: true, force: true });
   }

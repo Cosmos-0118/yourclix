@@ -8,8 +8,7 @@ import {
 import { withGlobalOptions } from "../helpers.js";
 import type { RunLevel } from "../../core/types.js";
 import { resolveRetentionDays } from "../../services/clean/clean-heuristics.js";
-import { interactive, withIntroOutro } from "../../core/task-ui.js";
-import { runCleanDashboard } from "../../tui/CleanDashboard.js";
+import { withIntroOutro } from "../../core/task-ui.js";
 
 export function registerClean(program: Command): void {
   withGlobalOptions(
@@ -41,17 +40,6 @@ Examples:
     await withIntroOutro(title, async () => {
       if (options.verify) {
         await runCleanerSelfCheck(mode);
-        return;
-      }
-
-      if (interactive()) {
-        await runCleanDashboard({
-          mode,
-          rawDays: options.days,
-          dryRun: options.dryRun,
-          verbose: Boolean(options.verbose),
-          autoApprove: Boolean(options.yes),
-        });
         return;
       }
 

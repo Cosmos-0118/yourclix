@@ -1,3 +1,4 @@
+import { ui } from "../../core/ui.js";
 import os from "node:os";
 import path from "node:path";
 import chalk from "chalk";
@@ -43,7 +44,7 @@ export function printSkippedBreakdown(skipped: SkipRecord[]): void {
     return;
   }
 
-  console.log([chalk.bold("Skipped breakdown"), ...reasonBreakdownLines(skipped)].join("\n"));
+  ui.write([chalk.bold("Skipped breakdown"), ...reasonBreakdownLines(skipped)].join("\n"));
 }
 
 export function printSkippedSummary(skipped: SkipRecord[], verbose: boolean): void {
@@ -65,7 +66,7 @@ export function printSkippedSummary(skipped: SkipRecord[], verbose: boolean): vo
         lines.push(chalk.dim(`  … and ${pluralize(buckets.length - 8, "more location group")}`));
       }
     }
-    console.log(lines.join("\n"));
+    ui.write(lines.join("\n"));
     return;
   }
 
@@ -86,7 +87,7 @@ export function printSkippedSummary(skipped: SkipRecord[], verbose: boolean): vo
       ),
     );
   }
-  console.log(lines.join("\n"));
+  ui.write(lines.join("\n"));
 }
 
 export function summarizeSkippedInline(skipped: SkipRecord[]): string {

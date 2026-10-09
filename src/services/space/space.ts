@@ -1,3 +1,4 @@
+import { ui } from "../../core/ui.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -44,7 +45,7 @@ export async function analyzeSpace(
     const home = os.homedir();
     const progress = new CommandProgress("Disk Space Analyzer", 2);
 
-    console.log(
+    ui.write(
       chalk.dim(
         "Targeted scan: Downloads, Desktop, Documents, Library/Containers — not the whole disk. " +
           "On APFS, clone/shared blocks can make summed sizes exceed physical disk usage.",
@@ -220,7 +221,7 @@ async function getPathSizesBatch(
 }
 
 function printTree(node: SpaceNode, prefix: string): void {
-  console.log(treeRow(prefix, "", node.name, node.bytes));
+  ui.write(treeRow(prefix, "", node.name, node.bytes));
 
   const children = node.children.slice(0, MAX_CHILDREN_RENDER);
   children.forEach((child, index) => {
@@ -228,14 +229,14 @@ function printTree(node: SpaceNode, prefix: string): void {
     const branch = isLast ? "└── " : "├── ";
     const nextPrefix = `${prefix}${isLast ? "    " : "│   "}`;
 
-    console.log(treeRow(prefix, branch, child.name, child.bytes));
+    ui.write(treeRow(prefix, branch, child.name, child.bytes));
     if (child.children.length > 0) {
       printTreeChildren(child, nextPrefix);
     }
   });
 
   if (node.children.length > children.length) {
-    console.log(`${prefix}… and ${pluralize(node.children.length - children.length, "more entry")}`);
+    ui.write(`${prefix}… and ${pluralize(node.children.length - children.length, "more entry")}`);
   }
 }
 
@@ -244,10 +245,10 @@ function printTreeChildren(node: SpaceNode, prefix: string): void {
   children.forEach((child, index) => {
     const isLast = index === children.length - 1;
     const branch = isLast ? "└── " : "├── ";
-    console.log(treeRow(prefix, branch, child.name, child.bytes));
+    ui.write(treeRow(prefix, branch, child.name, child.bytes));
   });
   if (node.children.length > children.length) {
-    console.log(`${prefix}… and ${pluralize(node.children.length - children.length, "more entry")}`);
+    ui.write(`${prefix}… and ${pluralize(node.children.length - children.length, "more entry")}`);
   }
 }
 

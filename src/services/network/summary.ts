@@ -1,3 +1,4 @@
+import { ui } from "../../core/ui.js";
 import chalk from "chalk";
 import { boundedBox } from "../../core/task-ui.js";
 import { terminalWidth, wrapText } from "../../core/format.js";
@@ -25,7 +26,7 @@ export function printNetworkSummary(
     return lines.join("\n");
   });
 
-  console.log(
+  ui.write(
     "\n" +
       boundedBox(blocks.join("\n\n"), {
         title: chalk.bold.white(` ${title} · summary `),
@@ -36,7 +37,7 @@ export function printNetworkSummary(
         margin: { top: 0, bottom: 0 },
       }),
   );
-  console.log(chalk.dim(wrapText(`Full log: ${logPath}`, Math.max(20, terminalWidth() - 2)).join("\n")));
+  ui.write(chalk.dim(wrapText(`Full log: ${logPath}`, Math.max(20, terminalWidth() - 2)).join("\n")));
 }
 
 export function hasCriticalFailure(steps: NetworkStepResult[]): boolean {

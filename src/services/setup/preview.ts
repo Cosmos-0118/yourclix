@@ -1,3 +1,4 @@
+import { ui } from "../../core/ui.js";
 import chalk from "chalk";
 import { CASK_LABELS } from "./constants.js";
 import type { AppsMode } from "./types.js";
@@ -27,7 +28,7 @@ export function printDesktopAppBundlePreview(
       `${chalk.cyan("  ▸")} ${chalk.bold.white(formatCaskLabel(id))} ${chalk.dim(`· ${id}`)}`,
   );
 
-  console.log(
+  ui.write(
     boundedBox([chalk.gray("Homebrew will install:"), "", ...lines].join("\n"), {
       title: chalk.bold.white(` ${bundleName} bundle `),
       titleAlignment: "center",

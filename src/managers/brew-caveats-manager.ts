@@ -1,3 +1,4 @@
+import { ui } from "../core/ui.js";
 import chalk from "chalk";
 import { boundedBox } from "../core/task-ui.js";
 
@@ -206,7 +207,7 @@ export function printBrewCaveatGuidance(
       .map((line) => chalk.dim(`- ${line}`)),
   ];
 
-  console.log(
+  ui.write(
     boundedBox(lines.join("\n"), {
       title: chalk.bold.white(` ${title} `),
       titleAlignment: "left",

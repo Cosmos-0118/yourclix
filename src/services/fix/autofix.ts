@@ -1,3 +1,4 @@
+import { ui } from "../../core/ui.js";
 import chalk from "chalk";
 import { pluralize } from "../../core/format.js";
 import os from "node:os";
@@ -44,13 +45,13 @@ function printNonFixableIssues(issues: Issue[]): void {
     return;
   }
 
-  console.log(chalk.bold.cyan("\n==> ") + chalk.bold.white("Not auto-fixed (by design)"));
+  ui.write(chalk.bold.cyan("\n==> ") + chalk.bold.white("Not auto-fixed (by design)"));
   for (const issue of nonFixable) {
-    console.log(
+    ui.write(
       chalk.yellow(`- ${issue.title}: ${getNonFixableReason(issue)}`),
     );
     if (issue.recommendedCommand) {
-      console.log(chalk.dim(`  Suggested: ${issue.recommendedCommand}`));
+      ui.write(chalk.dim(`  Suggested: ${issue.recommendedCommand}`));
     }
   }
 }
@@ -80,20 +81,20 @@ export async function runAutoFix(
 
   const report = await runDoctor();
 
-  console.log(chalk.bold.cyan("\n==> ") + chalk.bold.white("Diagnosis summary"));
+  ui.write(chalk.bold.cyan("\n==> ") + chalk.bold.white("Diagnosis summary"));
   printDoctorReport(report);
   printFixActionMatrix(report.issues);
 
   if (report.issues.length === 0) {
     printFixSuccessFooter(dryRun);
-    console.log(chalk.green("Nothing to fix. System already healthy."));
+    ui.write(chalk.green("Nothing to fix. System already healthy."));
     return;
   }
 
   const safeIssues = report.issues.filter((issue) => issue.safeToFix);
   if (safeIssues.length === 0) {
     printNonFixableIssues(report.issues);
-    console.log(
+    ui.write(
       chalk.yellow("\nIssues were found, but none are safe for automatic fixes."),
     );
     return;
@@ -105,7 +106,7 @@ export async function runAutoFix(
 
   if (!shouldFixBrokenSymlinks && !shouldRunBrewMaintenance) {
     printNonFixableIssues(report.issues);
-    console.log(
+    ui.write(
       chalk.yellow(
         "\nSafe issues were found, but none have automated remediation mapped yet.",
       ),
@@ -135,7 +136,7 @@ export async function runAutoFix(
   if (shouldFixBrokenSymlinks) {
     await progress.step("Broken symlinks", async () => {
       if (brokenPaths.length === 0) {
-        console.log(
+        ui.write(
           chalk.dim("No broken symlink paths in the doctor scan scope."),
         );
         return;
@@ -147,7 +148,7 @@ export async function runAutoFix(
       );
 
       if (!approveSymlinkCleanup) {
-        console.log(chalk.yellow("Broken symlink cleanup skipped by user."));
+        ui.write(chalk.yellow("Broken symlink cleanup skipped by user."));
         return;
       }
 
@@ -157,7 +158,7 @@ export async function runAutoFix(
       );
 
       const verb = dryRun ? "Would remove" : "Removed";
-      console.log(chalk.green(`\n==> ${verb} ${pluralize(removed, "broken symlink")}.`));
+      ui.write(chalk.green(`\n==> ${verb} ${pluralize(removed, "broken symlink")}.`));
 
       if (failures.length > 0) {
         throw new ActionableError({
@@ -177,7 +178,7 @@ export async function runAutoFix(
 
   if (shouldRunBrewMaintenance) {
     await progress.step("Homebrew upgrade & maintenance", async () => {
-      console.log(
+      ui.write(
         chalk.bold.cyan("\n==> ") +
           chalk.bold.white(
             dryRun ? "Homebrew (preview only)" : "Homebrew (live)",

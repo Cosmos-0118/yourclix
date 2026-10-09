@@ -1,3 +1,4 @@
+import { ui } from "./ui.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
@@ -100,7 +101,7 @@ class UndoManager {
       await fs.mkdir(BACKUPS_DIR, { recursive: true });
       this.initialized = true;
     } catch (error) {
-      console.error(chalk.red(`Failed to initialize backup directory: ${error}`));
+      ui.error(chalk.red(`Failed to initialize backup directory: ${error}`));
       throw error;
     }
   }
@@ -197,7 +198,7 @@ class UndoManager {
       await this.addToRegistry(metadata);
       return { metadata, warnings };
     } catch (error) {
-      console.error(chalk.red(`Backup failed: ${error}`));
+      ui.error(chalk.red(`Backup failed: ${error}`));
       throw error;
     }
   }
@@ -252,7 +253,7 @@ class UndoManager {
             await moveWithoutOverwrite(from, originalAbs);
             restoredCount += 1;
           } catch (error) {
-            console.error(
+            ui.error(
               chalk.red(
                 `Could not restore outside-home backup ${id} to ${originalAbs}: ${error}`,
               ),
@@ -298,7 +299,7 @@ class UndoManager {
 
       return restoredCount;
     } catch (error) {
-      console.error(chalk.red(`Restore failed: ${error}`));
+      ui.error(chalk.red(`Restore failed: ${error}`));
       throw error;
     }
   }
@@ -359,7 +360,7 @@ class UndoManager {
           await fs.rm(backupDir, { recursive: true, force: true });
           prunedCount += 1;
         } catch (error) {
-          console.warn(
+          ui.warn(
             chalk.yellow(`Failed to prune backup ${backup.id}: ${error}`),
           );
         }
@@ -424,7 +425,7 @@ class UndoManager {
 
       return totalBytes;
     } catch (error) {
-      console.warn(chalk.yellow(`Failed to calculate backup size: ${error}`));
+      ui.warn(chalk.yellow(`Failed to calculate backup size: ${error}`));
       return 0;
     }
   }

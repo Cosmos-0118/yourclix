@@ -1,3 +1,4 @@
+import { ui } from "../../core/ui.js";
 import os from "node:os";
 import path from "node:path";
 import chalk from "chalk";
@@ -58,7 +59,7 @@ function expandTargets(targets: string[]): string[] {
 
 export async function privacyClean(dryRun = false, yes = false): Promise<void> {
   const progress = new CommandProgress("Privacy Cleanup", 4);
-  console.log(chalk.bold("Privacy cleanup targets"));
+  ui.write(chalk.bold("Privacy cleanup targets"));
 
   const browsers = await progress.step("Detecting installed browsers", async () =>
     detectInstalledBrowsers(),
@@ -74,7 +75,7 @@ export async function privacyClean(dryRun = false, yes = false): Promise<void> {
   );
 
   if (safariRunning) {
-    console.log(
+    ui.write(
       chalk.yellow(
         "Safari appears to be running. Safari history cleanup targets will be skipped for safety.",
       ),
@@ -85,14 +86,14 @@ export async function privacyClean(dryRun = false, yes = false): Promise<void> {
     targets.filter((target) => !safariRunning || !target.includes("/Safari/History.db")),
   );
 
-  console.log(chalk.dim(`${pluralize(expanded.length, "target")} selected`));
+  ui.write(chalk.dim(`${pluralize(expanded.length, "target")} selected`));
   for (const target of expanded) {
-    console.log(wrapText(`- ${compactPath(target)}`, Math.max(20, terminalWidth() - 2)).join("\n"));
+    ui.write(wrapText(`- ${compactPath(target)}`, Math.max(20, terminalWidth() - 2)).join("\n"));
   }
 
   const approved = await confirm("Proceed with privacy cleanup?", yes);
   if (!approved) {
-    console.log(chalk.yellow("Cancelled by user."));
+    ui.write(chalk.yellow("Cancelled by user."));
     return;
   }
 
@@ -148,7 +149,7 @@ export async function privacyClean(dryRun = false, yes = false): Promise<void> {
 
   progress.tick("Finalizing cleanup");
 
-  console.log(
+  ui.write(
     chalk.green(`Privacy cleanup complete${dryRun ? " (dry-run)" : ""}.`),
   );
 }

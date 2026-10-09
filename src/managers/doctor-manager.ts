@@ -1,3 +1,4 @@
+import { ui } from "../core/ui.js";
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
@@ -307,7 +308,7 @@ export async function getDoctorSymlinkScanContext(): Promise<{
 
 export function printDoctorSummary(report: DoctorReport): void {
   if (!report.issues.length) {
-    console.log(chalk.green("No major issues found."));
+    ui.write(chalk.green("No major issues found."));
   } else {
     const order = ["critical", "warn", "info"] as const;
     const severityMeta: Record<
@@ -331,8 +332,8 @@ export function printDoctorSummary(report: DoctorReport): void {
       },
     };
 
-    console.log(chalk.bold("System health report"));
-    console.log(chalk.dim("Severity legend: [CRIT] immediate action, [WARN] should fix soon, [INFO] optional optimization."));
+    ui.write(chalk.bold("System health report"));
+    ui.write(chalk.dim("Severity legend: [CRIT] immediate action, [WARN] should fix soon, [INFO] optional optimization."));
 
     for (const severity of order) {
       const group = report.issues.filter((issue) => (issue.severity ?? "warn") === severity);
@@ -341,33 +342,33 @@ export function printDoctorSummary(report: DoctorReport): void {
       }
 
       const meta = severityMeta[severity];
-      console.log(meta.color(chalk.bold(`\n${meta.header}`)));
+      ui.write(meta.color(chalk.bold(`\n${meta.header}`)));
       for (const issue of group) {
-        console.log(meta.color(`- ${meta.marker} ${issue.title}: ${issue.description}`));
+        ui.write(meta.color(`- ${meta.marker} ${issue.title}: ${issue.description}`));
         const recommended = issue.recommendedCommand ?? issue.command;
         if (recommended) {
-          console.log(`  Next step: ${recommended}`);
+          ui.write(`  Next step: ${recommended}`);
         }
-        console.log(chalk.dim(`  Safe auto-fix: ${issue.safeToFix ? "yes" : "no"}`));
+        ui.write(chalk.dim(`  Safe auto-fix: ${issue.safeToFix ? "yes" : "no"}`));
       }
     }
   }
 
   if (report.largeDirectories.length) {
-    console.log(chalk.bold("\nLarge directories"));
+    ui.write(chalk.bold("\nLarge directories"));
     for (const entry of report.largeDirectories.slice(0, 8)) {
-      console.log(`- ${entry.path}: ${bytesToHuman(entry.bytes)}`);
+      ui.write(`- ${entry.path}: ${bytesToHuman(entry.bytes)}`);
     }
   }
 
   if (report.developerCaches.length) {
-    console.log(chalk.bold("\nDeveloper caches"));
+    ui.write(chalk.bold("\nDeveloper caches"));
     for (const entry of report.developerCaches.slice(0, 8)) {
-      console.log(`- ${entry.path}: ${bytesToHuman(entry.bytes)}`);
+      ui.write(`- ${entry.path}: ${bytesToHuman(entry.bytes)}`);
     }
   }
 
-  console.log(
+  ui.write(
     chalk.dim(`Disk free: ${report.diskFreePercent.toFixed(1)}%`),
   );
 }

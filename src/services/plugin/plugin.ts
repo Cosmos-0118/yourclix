@@ -1,3 +1,4 @@
+import { ui } from "../../core/ui.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -33,13 +34,13 @@ export async function listPlugins(): Promise<void> {
   );
 
   if (manifest.installed.length === 0) {
-    console.log(chalk.yellow("No plugins installed."));
+    ui.write(chalk.yellow("No plugins installed."));
     return;
   }
 
-  console.log(chalk.bold("Installed plugins:"));
+  ui.write(chalk.bold("Installed plugins:"));
   for (const plugin of manifest.installed) {
-    console.log(`- ${plugin}`);
+    ui.write(`- ${plugin}`);
   }
 }
 
@@ -57,14 +58,14 @@ export async function searchPlugins(query: string): Promise<void> {
     .filter((line) => line.startsWith("your-plugin-"));
 
   if (rows.length === 0) {
-    console.log(chalk.yellow(`No matching plugins found for '${query}'.`));
+    ui.write(chalk.yellow(`No matching plugins found for '${query}'.`));
     return;
   }
 
-  console.log(chalk.bold("Matching plugins:"));
+  ui.write(chalk.bold("Matching plugins:"));
   for (const row of rows.slice(0, 10)) {
     const [name, description] = row.split(":", 2);
-    console.log(`- ${name}${description ? `: ${description}` : ""}`);
+    ui.write(`- ${name}${description ? `: ${description}` : ""}`);
   }
 }
 
@@ -98,7 +99,7 @@ export async function installPlugin(
     progress.tick("Plugin already recorded in manifest");
   }
 
-  console.log(chalk.green(`Plugin installed: ${packageName}`));
+  ui.write(chalk.green(`Plugin installed: ${packageName}`));
 }
 
 export async function removePlugin(
@@ -129,5 +130,5 @@ export async function removePlugin(
     progress.tick("Skipping manifest write (dry-run)");
   }
 
-  console.log(chalk.green(`Plugin removed: ${packageName}`));
+  ui.write(chalk.green(`Plugin removed: ${packageName}`));
 }

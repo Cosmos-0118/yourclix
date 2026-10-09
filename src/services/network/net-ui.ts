@@ -1,3 +1,4 @@
+import { ui } from "../../core/ui.js";
 import chalk from "chalk";
 import { compactPath, terminalRule, terminalWidth, wrapText } from "../../core/format.js";
 import { boundedBox } from "../../core/task-ui.js";
@@ -6,7 +7,7 @@ const RULE = () => chalk.dim(terminalRule(52));
 
 export function printNetFixBanner(dryRun: boolean): void {
   const mode = dryRun ? chalk.yellow(" dry-run ") : chalk.cyan(" live ");
-  console.log(
+  ui.write(
     "\n" +
       boundedBox(
         [
@@ -33,13 +34,13 @@ export function printNetFixBanner(dryRun: boolean): void {
 }
 
 export function printNetFixPipelineHint(): void {
-  console.log(chalk.bold.cyan("\n==> ") + chalk.bold.white("Repair pipeline"));
-  console.log(RULE());
+  ui.write(chalk.bold.cyan("\n==> ") + chalk.bold.white("Repair pipeline"));
+  ui.write(RULE());
   const pipeline = "1 Sudo → 2 Route / iface → 3 ARP → 4 DNS → 5 mDNS → 6 DHCP → 7 Wi‑Fi";
   for (const line of wrapText(pipeline, Math.max(20, terminalWidth() - 4))) {
-    console.log(chalk.dim(`  ${line}`));
+    ui.write(chalk.dim(`  ${line}`));
   }
-  console.log(RULE());
+  ui.write(RULE());
 }
 
 export interface NetPlistTarget {
@@ -49,7 +50,7 @@ export interface NetPlistTarget {
 
 export function printNetResetBanner(dryRun: boolean): void {
   const mode = dryRun ? chalk.yellow(" dry-run ") : chalk.hex("#e74c3c")(" live ");
-  console.log(
+  ui.write(
     "\n" +
       boundedBox(
         [
@@ -73,17 +74,17 @@ export function printNetResetBanner(dryRun: boolean): void {
 }
 
 export function printNetResetPlistTargets(targets: NetPlistTarget[]): void {
-  console.log(chalk.bold.cyan("\n==> ") + chalk.bold.white("Plist scope"));
-  console.log(RULE());
+  ui.write(chalk.bold.cyan("\n==> ") + chalk.bold.white("Plist scope"));
+  ui.write(RULE());
   for (const target of targets) {
     const raw = `${compactPath(target.path)}${target.optional ? "  (optional on newer macOS)" : ""}`;
     const lines = wrapText(raw, Math.max(20, terminalWidth() - 8));
-    console.log(`${chalk.dim("  ▸")} ${chalk.white(lines[0] ?? "")}`);
+    ui.write(`${chalk.dim("  ▸")} ${chalk.white(lines[0] ?? "")}`);
     for (const line of lines.slice(1)) {
-      console.log(`      ${chalk.white(line)}`);
+      ui.write(`      ${chalk.white(line)}`);
     }
   }
-  console.log(RULE());
+  ui.write(RULE());
 }
 
 export function printNetBackupFooter(args: {
@@ -95,7 +96,7 @@ export function printNetBackupFooter(args: {
   const { backupDirMaterialized, backupPlanned, dryRun, backupDir } = args;
 
   if (backupDirMaterialized) {
-    console.log(
+    ui.write(
       "\n" +
         boundedBox(
           [
@@ -121,7 +122,7 @@ export function printNetBackupFooter(args: {
   }
 
   if (dryRun && backupPlanned) {
-    console.log(
+    ui.write(
       "\n" +
         boundedBox(
           [
@@ -145,7 +146,7 @@ export function printNetBackupFooter(args: {
 }
 
 export function printNetFixSuccess(): void {
-  console.log(
+  ui.write(
     "\n" +
       boundedBox(
         chalk.green(
@@ -164,7 +165,7 @@ export function printNetFixSuccess(): void {
 }
 
 export function printNetResetSuccess(): void {
-  console.log(
+  ui.write(
     "\n" +
       boundedBox(chalk.green("Network reset completed."), {
         title: chalk.bold.white(" done "),

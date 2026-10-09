@@ -1,6 +1,9 @@
 import { spawn } from "node:child_process";
+import { ui, CliCancelled } from "./ui.js";
+import { watchCancellation } from "./child-lifecycle.js";
 
 export interface ExecOptions {
+  signal?: AbortSignal;
   dryRun?: boolean;
   allowFailure?: boolean;
   cwd?: string;
@@ -14,6 +17,7 @@ export interface ExecOptions {
 }
 
 export interface FilteredStreamOptions {
+  signal?: AbortSignal;
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   allowFailure?: boolean;
@@ -46,11 +50,20 @@ export async function runCommandFilteredStream(
   options: FilteredStreamOptions = {},
 ): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
-    const display = options.displayStream ?? process.stdout;
+    const signal = options.signal ?? ui.signal;
+    if (signal.aborted) {
+      reject(new CliCancelled());
+      return;
+    }
+    const display = options.displayStream;
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: { ...process.env, ...(options.env ?? {}) },
       stdio: ["ignore", "pipe", "pipe"],
+    });
+    const releaseCancellation = watchCancellation(child, signal, () => {
+      finishHeartbeat();
+      reject(new CliCancelled());
     });
 
     let stdout = "";
@@ -67,7 +80,8 @@ export async function runCommandFilteredStream(
       if (options.onLine) {
         options.onLine(text);
       } else {
-        display.write(`${text}\n`);
+        if (display) display.write(`${text}\n`);
+        else ui.note(text);
       }
     };
 
@@ -82,7 +96,7 @@ export async function runCommandFilteredStream(
 
       let pending = which === "stdout" ? pendingOut : pendingErr;
       let newlineAt: number;
-      while ((newlineAt = pending.indexOf("\n")) !== -1) {
+      while ((newlineAt = pending.search(/[\r\n]/)) !== -1) {
         const line = pending.slice(0, newlineAt);
         pending = pending.slice(newlineAt + 1);
         emitOneLine(line, which);
@@ -111,7 +125,7 @@ export async function runCommandFilteredStream(
         if (options.onLine) {
           options.onLine(pulse);
         } else {
-          console.error(pulse);
+          ui.note(pulse);
         }
       }, hbMs);
     }
@@ -125,6 +139,11 @@ export async function runCommandFilteredStream(
 
     child.on("error", (error) => {
       finishHeartbeat();
+      releaseCancellation();
+      if (signal.aborted) {
+        reject(new CliCancelled());
+        return;
+      }
       if (options.allowFailure) {
         resolve({
           code: 1,
@@ -136,8 +155,13 @@ export async function runCommandFilteredStream(
       reject(error);
     });
 
-    child.on("close", (code) => {
+    child.on("close", (code, exitSignal) => {
       finishHeartbeat();
+      releaseCancellation();
+      if (signal.aborted || exitSignal === "SIGINT" || code === 130) {
+        reject(new CliCancelled());
+        return;
+      }
       if (pendingOut.length > 0) {
         emitOneLine(pendingOut, "stdout");
         pendingOut = "";
@@ -162,7 +186,7 @@ export interface ExecResult {
   stderr: string;
 }
 
-export async function runCommand(
+async function executeCommand(
   command: string,
   args: string[] = [],
   options: ExecOptions = {},
@@ -176,15 +200,22 @@ export async function runCommand(
   }
 
   return new Promise((resolve, reject) => {
+    const signal = options.signal ?? ui.signal;
+    if (signal.aborted) {
+      reject(new CliCancelled());
+      return;
+    }
     const useInheritedStdio = options.stdio === "inherit";
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: { ...process.env, ...(options.env ?? {}) },
-      stdio:
-        useInheritedStdio ?
-          ["inherit", "inherit", "inherit"]
+      stdio: useInheritedStdio
+        ? ["inherit", "inherit", "inherit"]
         : ["ignore", "pipe", "pipe"],
     });
+    const releaseCancellation = watchCancellation(child, signal, () =>
+      reject(new CliCancelled()),
+    );
 
     let stdout = "";
     let stderr = "";
@@ -197,31 +228,12 @@ export async function runCommand(
       stderr += chunk.toString();
     });
 
-    const hbMs = options.heartbeatMs ?? 0;
-    let heartbeat: ReturnType<typeof setInterval> | undefined;
-    if (
-      hbMs > 0 &&
-      useInheritedStdio &&
-      process.stderr.isTTY
-    ) {
-      const hint = `${command} ${args.slice(0, 3).join(" ")}…`;
-      heartbeat = setInterval(() => {
-        const time = new Date().toLocaleTimeString();
-        console.error(
-          `\x1b[2m…still running ${hint} (${time})\x1b[0m`,
-        );
-      }, hbMs);
-    }
-
-    const finishHeartbeat = () => {
-      if (heartbeat) {
-        clearInterval(heartbeat);
-        heartbeat = undefined;
-      }
-    };
-
     child.on("error", (error) => {
-      finishHeartbeat();
+      releaseCancellation();
+      if (signal.aborted) {
+        reject(new CliCancelled());
+        return;
+      }
       if (options.allowFailure) {
         resolve({
           code: 1,
@@ -234,8 +246,12 @@ export async function runCommand(
       reject(error);
     });
 
-    child.on("close", (code) => {
-      finishHeartbeat();
+    child.on("close", (code, exitSignal) => {
+      releaseCancellation();
+      if (signal.aborted || exitSignal === "SIGINT" || code === 130) {
+        reject(new CliCancelled());
+        return;
+      }
       const result: ExecResult = {
         code: code ?? 1,
         stdout: stdout.trim(),
@@ -251,4 +267,15 @@ export async function runCommand(
       resolve(result);
     });
   });
+}
+
+/** Suspend UI rendering while a subprocess owns stdin/stdout (sudo, installers). */
+export async function runCommand(
+  command: string,
+  args: string[] = [],
+  options: ExecOptions = {},
+): Promise<ExecResult> {
+  return options.stdio === "inherit" && !options.dryRun
+    ? ui.suspend(() => executeCommand(command, args, options))
+    : executeCommand(command, args, options);
 }

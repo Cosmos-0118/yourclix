@@ -1,3 +1,4 @@
+import { ui } from "../../core/ui.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import chalk from "chalk";
@@ -70,7 +71,7 @@ export async function readSetupConfig(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await logger.log("warn", `Failed to load setup config: ${message}`);
-    console.log(
+    ui.write(
       chalk.yellow(
         `Warning: could not load config '${configPath}', using defaults.`,
       ),

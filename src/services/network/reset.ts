@@ -1,3 +1,4 @@
+import { ui } from "../../core/ui.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -101,7 +102,7 @@ export async function netReset(dryRun = false, yes = false): Promise<void> {
   printNetResetBanner(dryRun);
 
   if (process.env.SSH_CONNECTION || process.env.SSH_TTY) {
-    console.log(
+    ui.write(
       chalk.yellow(
         "\nWarning: running over SSH may disconnect your current session.",
       ),
@@ -112,7 +113,7 @@ export async function netReset(dryRun = false, yes = false): Promise<void> {
 
   const approved = await confirm("Proceed with network reset?", yes);
   if (!approved) {
-    console.log(chalk.yellow("Cancelled by user."));
+    ui.write(chalk.yellow("Cancelled by user."));
     return;
   }
 

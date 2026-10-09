@@ -1,3 +1,4 @@
+import { ui } from "../../core/ui.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -73,15 +74,15 @@ function isSafeBackupName(name: string): boolean {
 export async function listBackups(limit = 100): Promise<void> {
   const entries = await readBackupEntries();
   if (entries.length === 0) {
-    console.log(chalk.yellow("No backups found."));
-    console.log(chalk.dim(`Backup root: ${BACKUP_ROOT}`));
+    ui.write(chalk.yellow("No backups found."));
+    ui.write(chalk.dim(`Backup root: ${BACKUP_ROOT}`));
     return;
   }
 
   const shown = entries.slice(0, Math.max(1, limit));
   const totalBytes = entries.reduce((sum, entry) => sum + entry.sizeBytes, 0);
 
-  console.log(chalk.bold("Your backups"));
+  ui.write(chalk.bold("Your backups"));
   if (terminalWidth() >= 90) {
     for (const entry of shown) {
       const row = [
@@ -90,23 +91,23 @@ export async function listBackups(limit = 100): Promise<void> {
         pad(bytesToHuman(entry.sizeBytes), 9),
         entry.name,
       ].join(" ");
-      console.log(`- ${row}`);
+      ui.write(`- ${row}`);
     }
   } else {
     for (const entry of shown) {
       const row = `- ${entry.kind} · ${formatAgeDays(entry.modifiedAt)} · ${bytesToHuman(entry.sizeBytes)} · ${entry.name}`;
-      console.log(wrapText(row, Math.max(20, terminalWidth() - 2)).join("\n"));
+      ui.write(wrapText(row, Math.max(20, terminalWidth() - 2)).join("\n"));
     }
   }
 
   if (shown.length < entries.length) {
-    console.log(
+    ui.write(
       chalk.dim(`Showing ${shown.length}/${entries.length} backups.`),
     );
   }
 
-  console.log(chalk.cyan(`Total backup size: ${bytesToHuman(totalBytes)}`));
-  console.log(chalk.dim(`Backup root: ${BACKUP_ROOT}`));
+  ui.write(chalk.cyan(`Total backup size: ${bytesToHuman(totalBytes)}`));
+  ui.write(chalk.dim(`Backup root: ${BACKUP_ROOT}`));
 }
 
 export async function removeBackup(
@@ -127,17 +128,17 @@ export async function removeBackup(
 
   const approved = await confirm(`Delete backup '${name}'?`, yes);
   if (!approved) {
-    console.log(chalk.yellow("Cancelled by user."));
+    ui.write(chalk.yellow("Cancelled by user."));
     return;
   }
 
   if (dryRun) {
-    console.log(chalk.dim(`Dry-run: would delete ${compactPath(targetPath)}`));
+    ui.write(chalk.dim(`Dry-run: would delete ${compactPath(targetPath)}`));
     return;
   }
 
   await removePath(targetPath, false);
-  console.log(chalk.green(`Deleted backup: ${name}`));
+  ui.write(chalk.green(`Deleted backup: ${name}`));
 }
 
 export async function pruneBackups(
@@ -156,7 +157,7 @@ export async function pruneBackups(
   );
 
   if (candidates.length === 0) {
-    console.log(chalk.green(`No backups older than ${olderThanDays} days.`));
+    ui.write(chalk.green(`No backups older than ${olderThanDays} days.`));
     return;
   }
 
@@ -165,28 +166,28 @@ export async function pruneBackups(
     0,
   );
 
-  console.log(chalk.bold("Backup prune candidates"));
+  ui.write(chalk.bold("Backup prune candidates"));
   for (const entry of candidates.slice(0, 10)) {
-    console.log(
+    ui.write(
       `- ${entry.name} (${bytesToHuman(entry.sizeBytes)}, ${formatAgeDays(entry.modifiedAt)} old)`,
     );
   }
   if (candidates.length > 10) {
-    console.log(chalk.dim(`...and ${candidates.length - 10} more`));
+    ui.write(chalk.dim(`...and ${candidates.length - 10} more`));
   }
-  console.log(chalk.cyan(`Reclaimable: ${bytesToHuman(reclaimable)}`));
+  ui.write(chalk.cyan(`Reclaimable: ${bytesToHuman(reclaimable)}`));
 
   const approved = await confirm(
     `Delete ${pluralize(candidates.length, "backup item")} older than ${olderThanDays} days?`,
     yes,
   );
   if (!approved) {
-    console.log(chalk.yellow("Cancelled by user."));
+    ui.write(chalk.yellow("Cancelled by user."));
     return;
   }
 
   if (dryRun) {
-    console.log(chalk.dim("Dry-run: no backups deleted."));
+    ui.write(chalk.dim("Dry-run: no backups deleted."));
     return;
   }
 
@@ -194,5 +195,5 @@ export async function pruneBackups(
     await removePath(entry.fullPath, false);
   }
 
-  console.log(chalk.green(`Deleted ${pluralize(candidates.length, "backup item")}.`));
+  ui.write(chalk.green(`Deleted ${pluralize(candidates.length, "backup item")}.`));
 }

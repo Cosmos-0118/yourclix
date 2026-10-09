@@ -1,3 +1,4 @@
+import { ui } from "../../core/ui.js";
 import chalk from "chalk";
 import { ActionableError } from "../../core/actionable-error.js";
 import { runCommand } from "../../core/exec.js";
@@ -105,15 +106,15 @@ export async function listStartupItems(): Promise<void> {
   );
 
   if (items.length === 0) {
-    console.log("No startup items found.");
+    ui.write("No startup items found.");
     return;
   }
 
-  console.log(chalk.bold("Startup items:"));
+  ui.write(chalk.bold("Startup items:"));
   for (const item of items) {
     const launchMode = item.hidden ? "launch hidden" : "launch visible";
     const runtimeState = item.running ? "running" : "not running";
-    console.log(`- ${item.name} (${launchMode}, ${runtimeState})`);
+    ui.write(`- ${item.name} (${launchMode}, ${runtimeState})`);
   }
 
   printNextCommands("Next commands:", [
@@ -150,7 +151,7 @@ export async function disableStartupItem(
   );
 
   if (dryRun) {
-    console.log(chalk.green(`Startup item disable preview complete: ${name}`));
+    ui.write(chalk.green(`Startup item disable preview complete: ${name}`));
     return;
   }
 
@@ -164,20 +165,20 @@ export async function disableStartupItem(
   );
 
   if (disableResult.code !== 0 || stillPresent) {
-    console.log(chalk.bold(`Startup item disable failed for '${name}'.`));
+    ui.write(chalk.bold(`Startup item disable failed for '${name}'.`));
     if (disableResult.code !== 0) {
-      console.log(
+      ui.write(
         chalk.yellow(
           `- Disable command failed: ${disableResult.stderr || disableResult.stdout || "unknown error"}`,
         ),
       );
     }
     if (stillPresent) {
-      console.log(chalk.yellow(`- Verification failed: '${name}' is still present.`));
+      ui.write(chalk.yellow(`- Verification failed: '${name}' is still present.`));
     }
 
     for (const line of startupManualRecovery(name)) {
-      console.log(chalk.dim(line));
+      ui.write(chalk.dim(line));
     }
 
     throw new ActionableError({
@@ -194,7 +195,7 @@ export async function disableStartupItem(
   }
 
   if (!matchedBefore) {
-    console.log(
+    ui.write(
       chalk.yellow(
         `Startup item '${name}' was not present before disable; no change was required.`,
       ),
@@ -203,7 +204,7 @@ export async function disableStartupItem(
     return;
   }
 
-  console.log(chalk.green(`Startup item disabled: ${name}`));
+  ui.write(chalk.green(`Startup item disabled: ${name}`));
   printNextCommands("Next commands:", ["your startup list"]);
 }
 
@@ -225,7 +226,7 @@ export async function enableStartupItem(
     name,
   );
   if (alreadyPresent) {
-    console.log(
+    ui.write(
       chalk.yellow(
         `Startup item '${name}' is already enabled; no change was required.`,
       ),
@@ -248,7 +249,7 @@ export async function enableStartupItem(
   );
 
   if (dryRun) {
-    console.log(chalk.green(`Startup item enable preview complete: ${name}`));
+    ui.write(chalk.green(`Startup item enable preview complete: ${name}`));
     return;
   }
 
@@ -279,6 +280,6 @@ export async function enableStartupItem(
     });
   }
 
-  console.log(chalk.green(`Startup item enabled: ${name}`));
+  ui.write(chalk.green(`Startup item enabled: ${name}`));
   printNextCommands("Next commands:", ["your startup list"]);
 }

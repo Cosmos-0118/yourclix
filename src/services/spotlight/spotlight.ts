@@ -1,3 +1,4 @@
+import { ui } from "../../core/ui.js";
 import chalk from "chalk";
 import { ActionableError } from "../../core/actionable-error.js";
 import { terminalWidth, wrapText } from "../../core/format.js";
@@ -30,7 +31,7 @@ function printSpotlightSummary(
   target: string,
   steps: SpotlightStepResult[],
 ): void {
-  console.log(chalk.bold(`\n=== your spotlight reset summary (${target}) ===`));
+  ui.write(chalk.bold(`\n=== your spotlight reset summary (${target}) ===`));
 
   for (const step of steps) {
     const marker =
@@ -38,9 +39,9 @@ function printSpotlightSummary(
       : step.status === "failed" ? chalk.red("[fail]")
       : chalk.dim("[skip]");
 
-    console.log(`${marker} ${wrapText(`${step.name} (${step.command})`, Math.max(20, terminalWidth() - 2)).join("\n")}`);
+    ui.write(`${marker} ${wrapText(`${step.name} (${step.command})`, Math.max(20, terminalWidth() - 2)).join("\n")}`);
     for (const detail of step.details.slice(0, 3)) {
-      console.log(chalk.dim(wrapText(`  - ${detail}`, Math.max(20, terminalWidth() - 2)).join("\n")));
+      ui.write(chalk.dim(wrapText(`  - ${detail}`, Math.max(20, terminalWidth() - 2)).join("\n")));
     }
   }
 }
@@ -122,7 +123,7 @@ export async function spotlightStatus(): Promise<void> {
     "Querying Spotlight indexing state",
     async () => runCommand("mdutil", ["-sa"], { allowFailure: true }),
   );
-  console.log(
+  ui.write(
     result.stdout || result.stderr || "No Spotlight status output available.",
   );
 }
@@ -135,7 +136,7 @@ export async function spotlightReset(
   const target = targetPath ?? "/";
   const steps: SpotlightStepResult[] = [];
 
-  console.log(
+  ui.write(
     chalk.yellow(
       "Rebuilding Spotlight index can temporarily impact system performance.",
     ),
@@ -182,12 +183,12 @@ export async function spotlightReset(
           });
         }
 
-        console.log(
+        ui.write(
           chalk.yellow(
             "Administrator authentication is required for Spotlight reset.",
           ),
         );
-        console.log(
+        ui.write(
           chalk.dim("Please enter your macOS password when prompted."),
         );
 
@@ -469,8 +470,8 @@ export async function spotlightReset(
     });
   }
 
-  console.log(chalk.green(`Spotlight reset triggered for ${target}.`));
-  console.log(
+  ui.write(chalk.green(`Spotlight reset triggered for ${target}.`));
+  ui.write(
     chalk.dim("Tip: Use 'your spotlight status' to watch indexing progress."),
   );
   printNextCommands("Next commands:", [

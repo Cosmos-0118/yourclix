@@ -1,3 +1,4 @@
+import { ui } from "../../core/ui.js";
 import { Command } from "commander";
 import { executeUndo } from "../../services/undo/undo.js";
 
@@ -14,7 +15,7 @@ export function registerUndo(program: Command): void {
           try {
             await executeUndo({ action: "list", dryRun: false });
           } catch (error) {
-            console.error("Error listing backups:", error);
+            ui.error("Error listing backups:", error);
             process.exit(1);
           }
         }),
@@ -32,7 +33,7 @@ export function registerUndo(program: Command): void {
               dryRun: false,
             });
           } catch (error) {
-            console.error("Error restoring backup:", error);
+            ui.error("Error restoring backup:", error);
             process.exit(1);
           }
         }),
@@ -47,7 +48,7 @@ export function registerUndo(program: Command): void {
           try {
             const retentionDays = parseInt(options.days, 10);
             if (Number.isNaN(retentionDays) || retentionDays < 1) {
-              console.error("Invalid days value. Must be >= 1");
+              ui.error("Invalid days value. Must be >= 1");
               process.exit(1);
             }
 
@@ -58,7 +59,7 @@ export function registerUndo(program: Command): void {
               yes: Boolean(options.yes),
             });
           } catch (error) {
-            console.error("Error pruning backups:", error);
+            ui.error("Error pruning backups:", error);
             process.exit(1);
           }
         }),

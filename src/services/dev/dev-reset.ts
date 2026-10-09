@@ -1,3 +1,4 @@
+import { ui } from "../../core/ui.js";
 import chalk from "chalk";
 import { ActionableError } from "../../core/actionable-error.js";
 import { runCommand } from "../../core/exec.js";
@@ -179,14 +180,14 @@ export async function devReset(tool: string, dryRun = false): Promise<void> {
   }
 
   if (!dryRun && failedDetails.length > 0) {
-    console.log(chalk.bold(`Developer reset failed for ${tool}.`));
+    ui.write(chalk.bold(`Developer reset failed for ${tool}.`));
     for (const detail of failedDetails) {
-      console.log(chalk.yellow(`- ${detail}`));
+      ui.write(chalk.yellow(`- ${detail}`));
     }
 
     const recoverySteps = buildDevManualRecovery(tool, plan, caveatFollowUps);
     for (const line of recoverySteps) {
-      console.log(chalk.dim(line));
+      ui.write(chalk.dim(line));
     }
 
     throw new ActionableError({
@@ -198,21 +199,21 @@ export async function devReset(tool: string, dryRun = false): Promise<void> {
   }
 
   if (!dryRun && caveatFollowUps.length > 0) {
-    console.log(chalk.bold("Homebrew caveat follow-up"));
+    ui.write(chalk.bold("Homebrew caveat follow-up"));
     for (const followUp of caveatFollowUps) {
-      console.log(chalk.dim(`- ${followUp}`));
+      ui.write(chalk.dim(`- ${followUp}`));
     }
   }
 
   if (!dryRun) {
-    console.log(
+    ui.write(
       chalk.green(
         `Verification output: ${firstCommandOutput(verifyResult)}`,
       ),
     );
   }
 
-  console.log(chalk.green(`Developer environment reset complete for ${tool}.`));
+  ui.write(chalk.green(`Developer environment reset complete for ${tool}.`));
   printNextCommands("Next commands:", [
     `your doctor`,
     `${plan.verifyCommand} ${plan.verifyArgs.join(" ")}`,

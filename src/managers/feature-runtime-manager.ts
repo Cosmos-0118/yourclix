@@ -1,3 +1,4 @@
+import { ui } from "../core/ui.js";
 import chalk from "chalk";
 import { runCommand } from "../core/exec.js";
 import { ensureManagedPath } from "./path-manager.js";
@@ -98,7 +99,7 @@ export async function ensureFeatureRuntime(
 export function printRuntimeWarnings(result: RuntimeCheckResult): void {
   for (const requirement of result.missingRecommended) {
     const hint = requirement.installHint ? ` ${requirement.installHint}` : "";
-    console.log(
+    ui.write(
       chalk.yellow(
         `Warning: recommended dependency '${requirement.command}' is missing.${hint}`,
       ),
