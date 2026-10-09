@@ -228,30 +228,26 @@ export async function executeCleaner(
 
   const { candidates, skipped, eligibleBytes, policy } = outcome;
 
-  ui.write(chalk.cyan(
-    `Eligible after safety checks: ${pluralize(candidates.length, "path")}, ${bytesToHuman(eligibleBytes)}`,
-  ));
+  ui.notice(`Eligible after safety checks: ${pluralize(candidates.length, "path")}, ${bytesToHuman(eligibleBytes)}`);
 
   if (!candidates.length) {
-    ui.write(chalk.yellow("No eligible cleanup candidates after safety checks."));
+    ui.notice("No eligible cleanup candidates after safety checks.");
     if (options.verbose) {
       printSkippedBreakdown(skipped);
     } else {
-      ui.write(chalk.dim(summarizeSkippedInline(skipped)));
+      ui.note(summarizeSkippedInline(skipped));
     }
     return;
   }
 
-  ui.write(
-    chalk.dim(`Retention policy: targets must be older than ${policy.olderThanDays} days.`),
-  );
+  ui.note(`Retention policy: targets must be older than ${policy.olderThanDays} days.`);
   const approved = await confirmAction(
     `Move ${pluralize(candidates.length, "path")} to the undo backup in ${options.mode.toUpperCase()} mode?`,
     Boolean(options.yes),
   );
 
   if (!approved) {
-    ui.write(chalk.yellow("Cancelled."));
+    ui.status("skipped", "Cleanup cancelled.");
     return;
   }
 
@@ -267,14 +263,11 @@ export async function executeCleaner(
     policy,
     Boolean(options.dryRun),
   );
-  const headingColor = options.dryRun ? chalk.blue : chalk.green;
-  ui.write(headingColor.bold(title));
-  ui.write(body.join("\n"));
+  ui.list(title, body);
 
   printSkippedSummary(skipped, Boolean(options.verbose));
 
   if (backupOutcome.backupWarnings.length > 0) {
-    ui.write(chalk.yellow.bold("Warnings"));
-    ui.write(backupOutcome.backupWarnings.map((w) => chalk.yellow(`• ${w}`)).join("\n"));
+    ui.status("warn", "Backup warnings", backupOutcome.backupWarnings);
   }
 }

@@ -110,7 +110,7 @@ export async function listStartupItems(): Promise<void> {
     return;
   }
 
-  ui.write(chalk.bold("Startup items:"));
+  ui.heading("Startup items");
   for (const item of items) {
     const launchMode = item.hidden ? "launch hidden" : "launch visible";
     const runtimeState = item.running ? "running" : "not running";

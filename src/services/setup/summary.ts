@@ -5,15 +5,10 @@ export function renderSetupSummary(
   results: StepResult[],
   logPath: string,
 ): void {
-  ui.heading("Setup summary");
-
-  for (const result of results) {
-    ui.status(
-      result.status === "partial" ? "warn" : result.status,
-      result.name,
-      result.details.slice(0, 3),
-    );
-  }
+  ui.summary("Setup result", results);
+  const versions = results.find((result) => result.name === "Version checks");
+  if (versions && versions.status !== "skipped")
+    ui.list("Tool versions", versions.details);
 
   ui.note(`Log file: ${logPath}`);
 }

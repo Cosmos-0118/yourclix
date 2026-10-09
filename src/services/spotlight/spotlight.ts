@@ -1,7 +1,5 @@
 import { ui } from "../../core/ui.js";
-import chalk from "chalk";
 import { ActionableError } from "../../core/actionable-error.js";
-import { terminalWidth, wrapText } from "../../core/format.js";
 import { printNextCommands } from "../../core/next-steps.js";
 import { runCommand } from "../../core/exec.js";
 import { CommandProgress } from "../../core/progress.js";
@@ -31,19 +29,7 @@ function printSpotlightSummary(
   target: string,
   steps: SpotlightStepResult[],
 ): void {
-  ui.write(chalk.bold(`\n=== your spotlight reset summary (${target}) ===`));
-
-  for (const step of steps) {
-    const marker =
-      step.status === "success" ? chalk.green("[ok]")
-      : step.status === "failed" ? chalk.red("[fail]")
-      : chalk.dim("[skip]");
-
-    ui.write(`${marker} ${wrapText(`${step.name} (${step.command})`, Math.max(20, terminalWidth() - 2)).join("\n")}`);
-    for (const detail of step.details.slice(0, 3)) {
-      ui.write(chalk.dim(wrapText(`  - ${detail}`, Math.max(20, terminalWidth() - 2)).join("\n")));
-    }
-  }
+  ui.summary(`Reset result · ${target}`, steps);
 }
 
 function skippedStep(
@@ -61,10 +47,9 @@ function skippedStep(
   };
 }
 
-function parseSpotlightStatusState(output: string):
-  | "enabled"
-  | "disabled"
-  | "unknown" {
+function parseSpotlightStatusState(
+  output: string,
+): "enabled" | "disabled" | "unknown" {
   const normalized = output.toLowerCase();
   if (normalized.includes("indexing enabled")) {
     return "enabled";
@@ -102,17 +87,16 @@ async function runSpotlightStep(
   });
 
   const detail =
-    result.stdout ||
-    result.stderr ||
-    (result.code === 0 ?
-      "Completed successfully (exit code 0, no output)."
-    : "Command failed with no output.");
+    [result.stdout, result.stderr].filter(Boolean).join("\n") ||
+    (result.code === 0
+      ? "Completed successfully (exit code 0, no output)."
+      : "Command failed with no output.");
 
   return {
     name,
     command: `${command} ${args.join(" ")}`.trim(),
     critical,
-    status: result.code === 0 ? "success" : "failed",
+    status: dryRun ? "skipped" : result.code === 0 ? "success" : "failed",
     details: [detail],
   };
 }
@@ -123,7 +107,7 @@ export async function spotlightStatus(): Promise<void> {
     "Querying Spotlight indexing state",
     async () => runCommand("mdutil", ["-sa"], { allowFailure: true }),
   );
-  ui.write(
+  ui.note(
     result.stdout || result.stderr || "No Spotlight status output available.",
   );
 }
@@ -136,10 +120,10 @@ export async function spotlightReset(
   const target = targetPath ?? "/";
   const steps: SpotlightStepResult[] = [];
 
-  ui.write(
-    chalk.yellow(
-      "Rebuilding Spotlight index can temporarily impact system performance.",
-    ),
+  ui.notice(
+    "Rebuilding the Spotlight index may temporarily affect performance.",
+    [],
+    "warn",
   );
 
   let sudoStep: SpotlightStepResult;
@@ -183,14 +167,9 @@ export async function spotlightReset(
           });
         }
 
-        ui.write(
-          chalk.yellow(
-            "Administrator authentication is required for Spotlight reset.",
-          ),
-        );
-        ui.write(
-          chalk.dim("Please enter your macOS password when prompted."),
-        );
+        ui.notice("Administrator authentication is required.", [
+          "Enter your macOS password at the system prompt below.",
+        ]);
 
         const auth = await runCommand("sudo", ["-v"], {
           allowFailure: true,
@@ -416,7 +395,9 @@ export async function spotlightReset(
                 } satisfies SpotlightStepResult;
               }
 
-              const state = parseSpotlightStatusState(statusStep.details[0] ?? "");
+              const state = parseSpotlightStatusState(
+                statusStep.details[0] ?? "",
+              );
 
               if (state === "enabled") {
                 return {
@@ -470,12 +451,18 @@ export async function spotlightReset(
     });
   }
 
-  ui.write(chalk.green(`Spotlight reset triggered for ${target}.`));
-  ui.write(
-    chalk.dim("Tip: Use 'your spotlight status' to watch indexing progress."),
-  );
-  printNextCommands("Next commands:", [
-    "your spotlight status",
-    "your doctor",
-  ]);
+  if (dryRun) {
+    ui.note(`Preview only: would rebuild the Spotlight index on ${target}.`);
+  } else {
+    const verification = steps.find(
+      (step) => step.name === "Verify indexing state",
+    );
+    ui.note(
+      verification?.details[0] ?? "Indexing state could not be verified.",
+    );
+    ui.note(
+      "The rebuild continues in the background. Check its progress with the command below.",
+    );
+  }
+  printNextCommands("Next commands:", ["your spotlight status", "your doctor"]);
 }

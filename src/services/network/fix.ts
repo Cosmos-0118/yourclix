@@ -1,4 +1,5 @@
 import { ActionableError } from "../../core/actionable-error.js";
+import { ui } from "../../core/ui.js";
 import { CommandProgress } from "../../core/progress.js";
 import { createNetworkLogger } from "./logger.js";
 import { ensureSudoReady } from "./preflight.js";
@@ -9,7 +10,6 @@ import {
 import { runStepCommand, runStepScutilDhcpRefresh } from "./runner.js";
 import {
   printNetFixBanner,
-  printNetFixPipelineHint,
   printNetFixSuccess,
 } from "./net-ui.js";
 import { hasCriticalFailure, printNetworkSummary } from "./summary.js";
@@ -87,7 +87,6 @@ function skipStep(
 
 export async function netFix(dryRun = false): Promise<void> {
   printNetFixBanner(dryRun);
-  printNetFixPipelineHint();
 
   const logger = await createNetworkLogger("fix");
   const steps: NetworkStepResult[] = [];
@@ -153,6 +152,7 @@ export async function netFix(dryRun = false): Promise<void> {
     },
   );
   steps.push(discoverResult);
+  if (discoverResult.status === "success") ui.note(discoverResult.name);
 
   steps.push(
     await progress.stepNetwork("Clearing ARP cache", async () => {
@@ -270,5 +270,5 @@ export async function netFix(dryRun = false): Promise<void> {
     });
   }
 
-  printNetFixSuccess();
+  printNetFixSuccess(dryRun);
 }

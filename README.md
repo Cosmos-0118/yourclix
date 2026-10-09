@@ -92,6 +92,10 @@ Section titles and active steps use cyan; completed steps use green, warnings
 amber, failures red, and skipped steps grey. Details are indented underneath
 their step. Sections and detailed steps have a blank line between them, while
 short successful steps stay compact. Set `NO_COLOR=1` to disable colours.
+Outcome summaries show counts instead of replaying completed steps and raw
+commands. Authentication guidance, advisories, and next commands use the same
+indentation. Failure diagnostics stay visible; setup and network logs retain
+detailed subprocess output.
 
 Pipes, CI, dumb terminals, and redirected stdin use static output without
 cursor control or input prompts. Shell completion output stays raw. Ctrl-C
@@ -103,6 +107,9 @@ New services should return structured task results and write through `ui`,
 spinners, mount a separate dashboard, or write directly while a task owns the
 terminal. Use `runCommand` with `stdio: "inherit"` when a subprocess needs
 password input; it hands over the terminal automatically.
+Use `ui.heading` for sections, `ui.notice` for informational advisories,
+`ui.status` for results, `ui.summary` for outcome counts, and `ui.list` for
+commands or grouped values. Avoid hand-built banners and status summaries.
 
 ## Autocomplete Assistant
 

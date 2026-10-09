@@ -59,7 +59,7 @@ function expandTargets(targets: string[]): string[] {
 
 export async function privacyClean(dryRun = false, yes = false): Promise<void> {
   const progress = new CommandProgress("Privacy Cleanup", 4);
-  ui.write(chalk.bold("Privacy cleanup targets"));
+  ui.heading("Privacy cleanup targets");
 
   const browsers = await progress.step("Detecting installed browsers", async () =>
     detectInstalledBrowsers(),

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { ui, CliCancelled } from "./core/ui.js";
 import type { Command } from "commander";
-import { ActionableError, formatActionableError } from "./core/actionable-error.js";
+import { ActionableError } from "./core/actionable-error.js";
 import { YourCommand } from "./core/your-command.js";
 import { registerCommands } from "./commands/index.js";
 import {
@@ -34,22 +34,22 @@ program.hook("preAction", async (_thisCommand, actionCommand) => {
 program.hook("postAction", () => { ui.throwIfCancelled(); ui.finish(); });
 
 program.parseAsync(process.argv).catch((error: unknown) => {
-  ui.finish(true);
   if (error instanceof CliCancelled) {
+    ui.finish();
     ui.error("Cancelled.");
     process.exitCode = 130;
     return;
   }
   if (error instanceof ActionableError) {
-    for (const line of formatActionableError(error)) {
-      ui.error(line);
-    }
+    ui.reportError(`Error [${error.code}]: ${error.summary}`, error.details, error.nextSteps);
+    ui.finish(true);
     process.exitCode = 1;
     return;
   }
 
   const message = error instanceof Error ? error.message : String(error);
-  ui.error(`Error: ${message}`);
+  ui.reportError(`Error: ${message}`);
+  ui.finish(true);
   process.exitCode = 1;
 });
 

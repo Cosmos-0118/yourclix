@@ -1,6 +1,5 @@
 import { ui } from "../core/ui.js";
 import chalk from "chalk";
-import { panel } from "../core/task-ui.js";
 import { terminalWidth, wrapText } from "../core/format.js";
 import {
   runCommand,
@@ -47,32 +46,7 @@ function compactOutput(output: string, maxLength = 320): string {
 }
 
 export function printBrewSummary(title: string, steps: BrewStepResult[]): void {
-  const blocks = steps.map((step) => {
-    const marker =
-      step.status === "success" ? chalk.green.bold("OK ")
-      : step.status === "warn" ? chalk.yellow.bold("!! ")
-      : step.status === "failed" ? chalk.red.bold("NO ")
-      : chalk.dim("— ");
-
-    const detailLines = step.details
-      .flatMap((detail) => detail.split(/\r?\n/))
-      .map((detail) => detail.trim())
-      .filter(Boolean)
-      .slice(0, 3);
-    const lines = [
-      `${marker}${chalk.white(step.name)}`,
-      chalk.dim(`    ${step.command}`),
-      ...detailLines.map((d) => {
-        const one =
-          d.length > 140 ? `${d.slice(0, 137)}…` : d;
-        return chalk.dim(`    · ${one}`);
-      }),
-    ];
-
-    return lines.join("\n");
-  });
-
-  panel(blocks.join("\n\n"), title, (line) => chalk.gray(line));
+  ui.summary(title, steps);
 }
 
 export function hasCriticalBrewFailure(steps: BrewStepResult[]): boolean {

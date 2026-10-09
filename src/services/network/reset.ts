@@ -607,7 +607,7 @@ export async function netReset(dryRun = false, yes = false): Promise<void> {
     });
   }
 
-  printNetResetSuccess();
+  printNetResetSuccess(dryRun);
   printNextCommands("Next commands:", [
     "your net fix",
     "your doctor",

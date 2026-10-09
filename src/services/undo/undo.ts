@@ -23,7 +23,7 @@ export async function listUndoHistory(): Promise<void> {
     return;
   }
 
-  ui.write(chalk.bold("Undo History"));
+  ui.heading("Undo History");
   const wide = terminalWidth() >= 100;
   if (wide) {
     ui.write(

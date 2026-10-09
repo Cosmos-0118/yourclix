@@ -30,7 +30,8 @@ export async function runStepCommand(
     allowFailure: true,
   });
 
-  const rawOut = result.stdout || result.stderr || "";
+  const rawOut = [result.stderr, result.stdout].filter(Boolean).join("\n");
+  if (rawOut.trim()) await logger.log(`[output] ${name}\n${rawOut}`);
   const detail =
     rawOut.trim() ?
       truncateCommandOutput(rawOut.trim())
@@ -86,8 +87,7 @@ export async function runStepScutilDhcpRefresh(
   );
 
   const detail =
-    result.stdout ||
-    result.stderr ||
+    [result.stderr, result.stdout].filter(Boolean).join("\n") ||
     (result.code === 0 ?
       "DHCP refresh requested via scutil."
     : "scutil returned non-zero.");

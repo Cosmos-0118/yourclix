@@ -199,7 +199,7 @@ export async function devReset(tool: string, dryRun = false): Promise<void> {
   }
 
   if (!dryRun && caveatFollowUps.length > 0) {
-    ui.write(chalk.bold("Homebrew caveat follow-up"));
+    ui.heading("Homebrew caveat follow-up");
     for (const followUp of caveatFollowUps) {
       ui.write(chalk.dim(`- ${followUp}`));
     }

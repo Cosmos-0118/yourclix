@@ -134,7 +134,6 @@ export function printCleanerResults(results: ScanResult[]): void {
   rows.push("");
   rows.push(`${pad("Discovered size", labelWidth)}${chalk.bold.cyan(bytesToHuman(total))}`);
 
-  ui.write(chalk.bold("Scan summary"));
-  ui.write(rows.join("\n"));
-  ui.write(chalk.dim("Eligibility is calculated during cleanup preflight."));
+  ui.list("Scan result", rows);
+  ui.note("Eligibility is calculated during cleanup preflight.");
 }

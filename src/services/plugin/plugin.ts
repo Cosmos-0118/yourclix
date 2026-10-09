@@ -38,7 +38,7 @@ export async function listPlugins(): Promise<void> {
     return;
   }
 
-  ui.write(chalk.bold("Installed plugins:"));
+  ui.heading("Installed plugins");
   for (const plugin of manifest.installed) {
     ui.write(`- ${plugin}`);
   }
@@ -62,7 +62,7 @@ export async function searchPlugins(query: string): Promise<void> {
     return;
   }
 
-  ui.write(chalk.bold("Matching plugins:"));
+  ui.heading("Matching plugins");
   for (const row of rows.slice(0, 10)) {
     const [name, description] = row.split(":", 2);
     ui.write(`- ${name}${description ? `: ${description}` : ""}`);

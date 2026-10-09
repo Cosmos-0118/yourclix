@@ -1,6 +1,4 @@
 import { ui } from "../core/ui.js";
-import chalk from "chalk";
-import { boundedBox } from "../core/task-ui.js";
 
 export interface BrewCaveatNotice {
   blocks: string[][];
@@ -200,21 +198,5 @@ export function printBrewCaveatGuidance(
     return;
   }
 
-  const lines = [
-    chalk.yellow.bold("Homebrew reported caveats for this install."),
-    ...formatBrewCaveatFollowUps(notice)
-      .slice(0, 8)
-      .map((line) => chalk.dim(`- ${line}`)),
-  ];
-
-  ui.write(
-    boundedBox(lines.join("\n"), {
-      title: chalk.bold.white(` ${title} `),
-      titleAlignment: "left",
-      borderStyle: "round",
-      borderColor: "yellow",
-      padding: { left: 1, right: 1, top: 0, bottom: 0 },
-      margin: { top: 0, bottom: 0 },
-    }),
-  );
+  ui.status("warn", title, formatBrewCaveatFollowUps(notice).slice(0, 8));
 }

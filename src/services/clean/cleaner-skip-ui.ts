@@ -2,7 +2,7 @@ import { ui } from "../../core/ui.js";
 import os from "node:os";
 import path from "node:path";
 import chalk from "chalk";
-import { compactPath, pluralize, terminalWidth, wrapText } from "../../core/format.js";
+import { compactPath, pluralize } from "../../core/format.js";
 import type { HeuristicSkipRecord } from "./clean-heuristics.js";
 
 export type SkipRecord = HeuristicSkipRecord;
@@ -44,7 +44,7 @@ export function printSkippedBreakdown(skipped: SkipRecord[]): void {
     return;
   }
 
-  ui.write([chalk.bold("Skipped breakdown"), ...reasonBreakdownLines(skipped)].join("\n"));
+  ui.list("Skipped breakdown", reasonBreakdownLines(skipped));
 }
 
 export function printSkippedSummary(skipped: SkipRecord[], verbose: boolean): void {
@@ -52,7 +52,8 @@ export function printSkippedSummary(skipped: SkipRecord[], verbose: boolean): vo
     return;
   }
 
-  const lines = [chalk.bold(`Skipped paths · ${pluralize(skipped.length, "item")}`), ...reasonBreakdownLines(skipped)];
+  const title = `Skipped paths · ${pluralize(skipped.length, "item")}`;
+  const lines = reasonBreakdownLines(skipped);
 
   if (!verbose) {
     const home = os.homedir();
@@ -60,34 +61,29 @@ export function printSkippedSummary(skipped: SkipRecord[], verbose: boolean): vo
     if (buckets.length > 0) {
       lines.push("", chalk.dim("By location (use --verbose for full paths):"));
       for (const { label, count } of buckets.slice(0, 8)) {
-        lines.push(chalk.dim(`  ${count} under ${label}`));
+        lines.push(chalk.dim(` ${count} under ${label}`));
       }
       if (buckets.length > 8) {
-        lines.push(chalk.dim(`  … and ${pluralize(buckets.length - 8, "more location group")}`));
+        lines.push(chalk.dim(`… and ${pluralize(buckets.length - 8, "more location group")}`));
       }
     }
-    ui.write(lines.join("\n"));
+    ui.list(title, lines);
     return;
   }
 
   const sample = skipped.slice(0, 12);
   lines.push("", chalk.dim("Paths:"));
   for (const entry of sample) {
-    for (const line of wrapText(
-      `  ${compactPath(entry.path)} (${formatSkipReasonShort(entry.reason)})`,
-      Math.max(20, terminalWidth() - 2),
-    )) {
-      lines.push(chalk.dim(line));
-    }
+    lines.push(`${compactPath(entry.path)} (${formatSkipReasonShort(entry.reason)})`);
   }
   if (skipped.length > sample.length) {
     lines.push(
       chalk.dim(
-        `  … ${skipped.length - sample.length} more (truncated; narrow scan with filters if needed)`,
+        `… ${skipped.length - sample.length} more (truncated; narrow scan with filters if needed)`,
       ),
     );
   }
-  ui.write(lines.join("\n"));
+  ui.list(title, lines);
 }
 
 export function summarizeSkippedInline(skipped: SkipRecord[]): string {

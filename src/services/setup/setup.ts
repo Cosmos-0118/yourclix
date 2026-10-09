@@ -1,5 +1,4 @@
 import { ui } from "../../core/ui.js";
-import chalk from "chalk";
 import { runCommand } from "../../core/exec.js";
 import { ensureManagedPath } from "../../managers/path-manager.js";
 import { readSetupConfig, resolveSetupConfig } from "./config.js";
@@ -22,9 +21,9 @@ export async function runSetup(options: SetupOptions): Promise<void> {
   const configFromFile = await readSetupConfig(options.config, logger);
   const effective = resolveSetupConfig(options, configFromFile);
 
-  ui.write(chalk.cyan("Starting developer setup"));
+  ui.notice("Developer setup");
   if (effective.dryRun) {
-    ui.write(chalk.yellow("Dry-run mode enabled. No changes will be made."));
+    ui.note("Preview mode: planned package operations will be shown.");
   }
 
   const results: StepResult[] = [];
@@ -89,7 +88,6 @@ export async function runSetup(options: SetupOptions): Promise<void> {
       if (!effective.dryRun) {
         await ensureManagedPath("brew");
         if (!(await hasBrew())) {
-          ui.error(chalk.red("Homebrew installer finished without a working brew"));
           return {
             status: "failed",
             details: [
@@ -98,7 +96,6 @@ export async function runSetup(options: SetupOptions): Promise<void> {
           };
         }
       }
-      ui.write(chalk.green("Homebrew installation step completed"));
       return {
         status: "success",
         details: [
@@ -107,7 +104,6 @@ export async function runSetup(options: SetupOptions): Promise<void> {
       };
     }
 
-    ui.error(chalk.red("Homebrew installation failed"));
     return {
       status: "failed",
       details: [

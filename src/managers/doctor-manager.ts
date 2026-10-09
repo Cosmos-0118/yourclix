@@ -3,7 +3,6 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
 import dns from "node:dns/promises";
-import chalk from "chalk";
 import { bytesToHuman } from "../core/format.js";
 import { CommandProgress } from "../core/progress.js";
 import { pathSizeFast } from "../core/fs-utils.js";
@@ -107,12 +106,12 @@ export async function runDoctorChecks(): Promise<DoctorReport> {
   const sizeChecks = await progress.step(
     "Analyzing disk-heavy directories (targeted folders)",
     async () =>
-    Promise.all(
-      targets.map(async (target) => ({
-        path: target,
-        bytes: await pathSizeFast(target),
-      })),
-    ),
+      Promise.all(
+        targets.map(async (target) => ({
+          path: target,
+          bytes: await pathSizeFast(target),
+        })),
+      ),
   );
 
   const largeDirectories = sizeChecks
@@ -284,9 +283,10 @@ export async function runDoctorChecks(): Promise<DoctorReport> {
       title: "Git identity is not fully configured",
       description: "Missing global user.name or user.email can break commits",
       safeToFix: false,
-      command: "git config --global user.name \"Your Name\" && git config --global user.email \"you@example.com\"",
+      command:
+        'git config --global user.name "Your Name" && git config --global user.email "you@example.com"',
       recommendedCommand:
-        "git config --global user.name \"Your Name\" && git config --global user.email \"you@example.com\"",
+        'git config --global user.name "Your Name" && git config --global user.email "you@example.com"',
       severity: "warn",
     });
   }
@@ -307,68 +307,42 @@ export async function getDoctorSymlinkScanContext(): Promise<{
 }
 
 export function printDoctorSummary(report: DoctorReport): void {
+  ui.heading("System health");
   if (!report.issues.length) {
-    ui.write(chalk.green("No major issues found."));
+    ui.success("No major issues found.");
   } else {
-    const order = ["critical", "warn", "info"] as const;
-    const severityMeta: Record<
-      (typeof order)[number],
-      { header: string; marker: string; color: (text: string) => string }
-    > = {
-      critical: {
-        header: "CRITICAL",
-        marker: "[CRIT]",
-        color: chalk.red,
-      },
-      warn: {
-        header: "WARNING",
-        marker: "[WARN]",
-        color: chalk.yellow,
-      },
-      info: {
-        header: "INFO",
-        marker: "[INFO]",
-        color: chalk.cyan,
-      },
-    };
-
-    ui.write(chalk.bold("System health report"));
-    ui.write(chalk.dim("Severity legend: [CRIT] immediate action, [WARN] should fix soon, [INFO] optional optimization."));
-
-    for (const severity of order) {
-      const group = report.issues.filter((issue) => (issue.severity ?? "warn") === severity);
-      if (group.length === 0) {
-        continue;
-      }
-
-      const meta = severityMeta[severity];
-      ui.write(meta.color(chalk.bold(`\n${meta.header}`)));
+    for (const severity of ["critical", "warn", "info"] as const) {
+      const group = report.issues.filter(
+        (issue) => (issue.severity ?? "warn") === severity,
+      );
       for (const issue of group) {
-        ui.write(meta.color(`- ${meta.marker} ${issue.title}: ${issue.description}`));
         const recommended = issue.recommendedCommand ?? issue.command;
-        if (recommended) {
-          ui.write(`  Next step: ${recommended}`);
-        }
-        ui.write(chalk.dim(`  Safe auto-fix: ${issue.safeToFix ? "yes" : "no"}`));
+        const details = [
+          issue.description,
+          ...(recommended ? [`Next: ${recommended}`] : []),
+          `Safe auto-fix: ${issue.safeToFix ? "yes" : "no"}`,
+        ];
+        ui.notice(
+          `${severity === "critical" ? "Critical: " : ""}${issue.title}`,
+          details,
+          severity === "critical" ? "error" : severity,
+        );
       }
     }
   }
-
-  if (report.largeDirectories.length) {
-    ui.write(chalk.bold("\nLarge directories"));
-    for (const entry of report.largeDirectories.slice(0, 8)) {
-      ui.write(`- ${entry.path}: ${bytesToHuman(entry.bytes)}`);
-    }
-  }
-
-  if (report.developerCaches.length) {
-    ui.write(chalk.bold("\nDeveloper caches"));
-    for (const entry of report.developerCaches.slice(0, 8)) {
-      ui.write(`- ${entry.path}: ${bytesToHuman(entry.bytes)}`);
-    }
-  }
-
-  ui.write(
-    chalk.dim(`Disk free: ${report.diskFreePercent.toFixed(1)}%`),
-  );
+  if (report.largeDirectories.length)
+    ui.list(
+      "Large directories",
+      report.largeDirectories
+        .slice(0, 8)
+        .map((entry) => `${entry.path}: ${bytesToHuman(entry.bytes)}`),
+    );
+  if (report.developerCaches.length)
+    ui.list(
+      "Developer caches",
+      report.developerCaches
+        .slice(0, 8)
+        .map((entry) => `${entry.path}: ${bytesToHuman(entry.bytes)}`),
+    );
+  ui.note(`Disk free: ${report.diskFreePercent.toFixed(1)}%`);
 }

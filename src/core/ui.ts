@@ -159,8 +159,8 @@ export class CliUI {
     this.lastLineBlank = !stripAnsi(wrapped).split("\n").at(-1)?.trim();
     this.redraw();
   }
-  private gap(): void {
-    if (this.hasOutput && !this.lastLineBlank) this.write("");
+  private gap(target: Output = this.output): void {
+    if (this.hasOutput && !this.lastLineBlank) this.print(target, [""]);
     this.gapBeforeNextBlock = false;
   }
   private separateBlock(): void {
@@ -183,8 +183,12 @@ export class CliUI {
     this.detail(value, this.colors.gray);
     if (this.tasks.length === 0) this.gapBeforeNextBlock = true;
   }
-  private detail(value: string, color: ChalkInstance): void {
-    this.write(
+  private detail(
+    value: string,
+    color: ChalkInstance,
+    target: Output = this.output,
+  ): void {
+    this.print(target, [
       value
         .split(/\r?\n/)
         .map((line) => {
@@ -196,13 +200,78 @@ export class CliUI {
           return line.trim() ? `    ${style(line)}` : "";
         })
         .join("\n"),
-    );
+    ]);
   }
   message(value: string | string[]): void {
     this.write(Array.isArray(value) ? value.join("\n") : value);
   }
   success(value: string): void {
     this.status("success", value);
+  }
+  /** An advisory describes the operation; it is not an operation result. */
+  notice(
+    value: string,
+    details: string[] = [],
+    tone: "info" | "warn" | "error" = "info",
+  ): void {
+    this.separateBlock();
+    const color =
+      tone === "error"
+        ? this.colors.red
+        : tone === "warn"
+          ? this.colors.yellow
+          : this.colors.cyan;
+    this.write(`  ${color(`${tone === "info" ? "•" : "!"} ${value}`)}`);
+    for (const detail of details) this.detail(detail, this.colors.gray);
+    this.gapBeforeNextBlock = true;
+  }
+  /** Outcomes only: completed steps and their raw output are already above. */
+  summary<T extends { status: string }>(
+    title: string,
+    results: readonly T[],
+  ): void {
+    this.heading(title);
+    const groups = [
+      ["success", "completed", this.colors.green],
+      ["warn", "warning", this.colors.yellow],
+      ["failed", "failed", this.colors.red],
+      ["skipped", "skipped", this.colors.gray],
+    ] as const;
+    const parts = groups.flatMap(([status, label, color]) => {
+      const count = results.filter(
+        (result) =>
+          (result.status === "partial" ? "warn" : result.status) === status,
+      ).length;
+      return count
+        ? [
+            color(
+              `${count} ${label}${status === "warn" && count !== 1 ? "s" : ""}`,
+            ),
+          ]
+        : [];
+    });
+    this.detail(parts.join("  ·  ") || "No steps ran.", this.colors.gray);
+    this.gapBeforeNextBlock = true;
+  }
+  reportError(
+    label: string,
+    details: string[] = [],
+    nextSteps: string[] = [],
+  ): void {
+    this.gap(this.errorOutput);
+    this.failures++;
+    this.print(this.errorOutput, [`  ${this.colors.red(`✗ ${label}`)}`]);
+    for (const detail of details)
+      this.detail(detail, this.colors.red, this.errorOutput);
+    if (nextSteps.length) {
+      this.gap(this.errorOutput);
+      this.print(this.errorOutput, [
+        `  ${this.colors.bold.cyan("▸ Next steps")}`,
+      ]);
+      for (const step of nextSteps)
+        this.detail(step, this.colors.cyan, this.errorOutput);
+    }
+    this.gapBeforeNextBlock = true;
   }
   list(title: string, lines: string[]): void {
     this.heading(title);
@@ -268,7 +337,13 @@ export class CliUI {
       return result;
     } catch (error) {
       this.removeTask(task);
-      this.status(error instanceof CliCancelled ? "skipped" : "failed", label);
+      this.status(
+        error instanceof CliCancelled ? "skipped" : "failed",
+        label,
+        error instanceof CliCancelled
+          ? []
+          : [error instanceof Error ? error.message : String(error)],
+      );
       throw error;
     } finally {
       this.removeTask(task);

@@ -1,5 +1,5 @@
 import { ui } from "../../core/ui.js";
-import chalk from "chalk";
+import type { TaskStatus } from "../../core/ui.js";
 import { runCommand } from "../../core/exec.js";
 import {
   analyzeBrewCaveats,
@@ -27,23 +27,17 @@ export async function installBatch(
   effective: EffectiveSetupConfig,
   logger: SetupLogger,
 ): Promise<{ status: StepStatus; details: string[] }> {
-  ui.write(chalk.bold(`\n${title}`));
+  ui.heading(title);
   const details: string[] = [];
   let ok = 0;
   let failed = 0;
   let skipped = 0;
 
   for (const [index, target] of targets.entries()) {
-    const result = await ui.task(`Install ${target.name}`, async () => {
-      const status = await installTarget(
-        target,
-        index + 1,
-        targets.length,
-        effective,
-        logger,
-      );
-      return { status };
-    });
+    const result = await ui.task(
+      `[${index + 1}/${targets.length}] Install ${target.name}`,
+      () => installTarget(target, effective, logger),
+    );
     const status = result.status;
     if (status === "success") {
       ok += 1;
@@ -66,34 +60,26 @@ export async function installBatch(
 
 async function installTarget(
   target: InstallTarget,
-  index: number,
-  total: number,
   effective: EffectiveSetupConfig,
   logger: SetupLogger,
-): Promise<"success" | "failed" | "skipped"> {
-  const prefix = `[${index}/${total}]`;
-  ui.note(`${prefix} Checking ${target.name}`);
-
+): Promise<{ status: TaskStatus; details: string[] }> {
   const installed = await isInstalled(target);
   if (!effective.dryRun && installed) {
-    ui.write(chalk.green(`${prefix} ${target.name} already installed`));
     await logger.log(
       "debug",
       `${target.type}:${target.name}: already installed`,
     );
-    return "skipped";
+    return { status: "skipped", details: ["Already installed."] };
   }
 
-  ui.note(`${prefix} Installing ${target.name}`);
   const args =
     target.type === "cask"
       ? ["install", "--cask", target.name]
       : ["install", target.name];
 
   if (effective.dryRun) {
-    ui.write(chalk.yellow(`${prefix} Would install ${target.name}`));
     await logger.log("info", `${target.type}:${target.name}: would install`);
-    return "success";
+    return { status: "skipped", details: [`Would install ${target.name}.`] };
   }
 
   const result = await runCommand("brew", args, {
@@ -101,10 +87,8 @@ async function installTarget(
   });
 
   if (result.code === 0) {
-    ui.write(chalk.green(`${prefix} Installed ${target.name}`));
-    if (result.stdout.trim()) {
-      ui.write(chalk.dim(result.stdout));
-    }
+    const output = [result.stdout, result.stderr].filter(Boolean).join("\n");
+    if (output.trim()) await logger.log("info", output);
 
     const caveatNotice = analyzeBrewCaveats(
       [result.stdout, result.stderr].filter(Boolean).join("\n"),
@@ -119,17 +103,14 @@ async function installTarget(
     }
 
     await logger.log("info", `${target.type}:${target.name}: installed`);
-    return "success";
+    return { status: "success", details: [] };
   }
 
-  ui.write(chalk.red(`${prefix} Failed to install ${target.name}`));
   const detail =
-    result.stderr.trim() ||
-    result.stdout.trim() ||
+    [result.stdout, result.stderr].filter(Boolean).join("\n") ||
     "No details returned by brew.";
-  ui.write(chalk.yellow(detail));
   await logger.log("error", `${target.type}:${target.name}: ${detail}`);
-  return "failed";
+  return { status: "failed", details: [detail] };
 }
 
 async function isInstalled(target: InstallTarget): Promise<boolean> {

@@ -1,8 +1,6 @@
 import { ui } from "../../core/ui.js";
-import chalk from "chalk";
 import { CASK_LABELS } from "./constants.js";
 import type { AppsMode } from "./types.js";
-import { boundedBox } from "../../core/task-ui.js";
 
 export function formatCaskLabel(caskId: string): string {
   if (CASK_LABELS[caskId]) {
@@ -23,20 +21,8 @@ export function printDesktopAppBundlePreview(
     return;
   }
 
-  const lines = casks.map(
-    (id) =>
-      `${chalk.cyan("  ▸")} ${chalk.bold.white(formatCaskLabel(id))} ${chalk.dim(`· ${id}`)}`,
-  );
-
-  ui.write(
-    boundedBox([chalk.gray("Homebrew will install:"), "", ...lines].join("\n"), {
-      title: chalk.bold.white(` ${bundleName} bundle `),
-      titleAlignment: "center",
-      padding: { left: 1, right: 1, top: 0, bottom: 0 },
-      margin: { top: 1, bottom: 0 },
-      borderStyle: "round",
-      borderColor: "cyan",
-      dimBorder: false,
-    }),
+  ui.list(
+    `${bundleName} apps to install`,
+    casks.map((id) => `${formatCaskLabel(id)} · ${id}`),
   );
 }

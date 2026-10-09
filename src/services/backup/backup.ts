@@ -82,7 +82,7 @@ export async function listBackups(limit = 100): Promise<void> {
   const shown = entries.slice(0, Math.max(1, limit));
   const totalBytes = entries.reduce((sum, entry) => sum + entry.sizeBytes, 0);
 
-  ui.write(chalk.bold("Your backups"));
+  ui.heading("Your backups");
   if (terminalWidth() >= 90) {
     for (const entry of shown) {
       const row = [
@@ -166,7 +166,7 @@ export async function pruneBackups(
     0,
   );
 
-  ui.write(chalk.bold("Backup prune candidates"));
+  ui.heading("Backup prune candidates");
   for (const entry of candidates.slice(0, 10)) {
     ui.write(
       `- ${entry.name} (${bytesToHuman(entry.sizeBytes)}, ${formatAgeDays(entry.modifiedAt)} old)`,

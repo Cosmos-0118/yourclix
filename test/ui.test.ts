@@ -33,6 +33,7 @@ test("static tasks preserve returned failures and release ownership after throws
   assert.match(text, /Missing app/);
   assert.doesNotMatch(text, /✓ Upgrade cask/);
   assert.match(text, /✗ Throwing task/);
+  assert.match(text, /network lost/);
   assert.match(text, /Next task can write/);
   assert.doesNotMatch(text, /\x1b\[/);
 });
@@ -196,4 +197,67 @@ test("styled details retain their indentation on every narrow-terminal continuat
       .join(""),
     /AReallyLongApplicationName.app/,
   );
+});
+
+test("outcome summaries count results without replaying successful command output", () => {
+  const h = harness(false, 80);
+  h.terminal.summary("Reset result", [
+    {
+      status: "success",
+      name: "Disable indexing",
+      details: ["RAW SUCCESS OUTPUT"],
+    },
+    { status: "partial" },
+    { status: "failed" },
+    { status: "skipped" },
+  ]);
+  assert.match(h.read(), /1 completed/);
+  assert.match(h.read(), /1 warning/);
+  assert.match(h.read(), /1 failed/);
+  assert.match(h.read(), /1 skipped/);
+  assert.doesNotMatch(h.read(), /RAW SUCCESS OUTPUT|Disable indexing/);
+});
+
+test("advisories align with steps without changing the operation's final status", () => {
+  const h = harness(true, 80);
+  h.terminal.start("Reset");
+  h.terminal.notice(
+    "Rebuilding may affect performance",
+    ["Administrator authentication is required."],
+    "warn",
+  );
+  h.terminal.notice("Critical diagnostic finding", [], "error");
+  h.terminal.finish();
+  const output = stripAnsi(h.read());
+  assert.match(h.read(), /\x1b\[31m[^\n]*Critical diagnostic finding/);
+  assert.match(output, /\n  ! Rebuilding/);
+  assert.match(output, /\n    Administrator/);
+  assert.match(output, /✓ Done\./);
+  assert.doesNotMatch(output, /Finished with warnings/);
+  assert.doesNotMatch(output, /Finished with unresolved/);
+});
+
+test("formatted errors keep their cause and recovery guidance on stderr", () => {
+  const h = harness(false, 80);
+  const errorOutput = new PassThrough();
+  let errors = "";
+  errorOutput.on("data", (data) => {
+    errors += data;
+  });
+  const terminal = new CliUI({
+    input: h.input,
+    output: h.output,
+    errorOutput,
+    env: {},
+  });
+  terminal.reportError(
+    "Reset failed",
+    ["Permission denied"],
+    ["your spotlight status"],
+  );
+  assert.match(errors, /Reset failed/);
+  assert.match(errors, /Permission denied/);
+  assert.match(errors, /Next steps/);
+  assert.match(errors, /your spotlight status/);
+  assert.doesNotMatch(h.read(), /Reset failed|Permission denied/);
 });
