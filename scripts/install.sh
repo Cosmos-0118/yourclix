@@ -11,6 +11,7 @@ SOURCE_DIR="${YOUR_SOURCE_DIR:-$INSTALL_HOME/source}"
 GLOBAL_NPM_PREFIX="${YOUR_GLOBAL_NPM_PREFIX:-$HOME/.npm-global}"
 export GLOBAL_NPM_PREFIX
 YOUR_BREW_BIN=""
+MIN_NODE_VERSION="22.12.0"
 
 # ── terminal styling (disabled when not a TTY or NO_COLOR is set) ─────────────
 if [[ -z "${NO_COLOR:-}" ]] && [[ -t 1 ]]; then
@@ -114,8 +115,22 @@ ensure_homebrew() {
   ok "Homebrew installed ($YOUR_BREW_BIN)"
 }
 
+has_supported_node() {
+  node -e '
+    const current = process.versions.node.split(".").map(Number);
+    const minimum = process.argv[1].split(".").map(Number);
+    const difference = current.map((part, index) => part - minimum[index])
+      .find(part => part !== 0) ?? 0;
+    process.exit(difference >= 0 ? 0 : 1);
+  ' "$MIN_NODE_VERSION"
+}
+
 ensure_node() {
   if command -v node >/dev/null 2>&1; then
+    if ! has_supported_node; then
+      warn "Node.js ${MIN_NODE_VERSION} or newer is required. Update the active Node.js installation and rerun the installer."
+      return 1
+    fi
     ok "Node.js $(node -p process.version 2>/dev/null || echo '') present"
     return
   fi
@@ -125,6 +140,11 @@ ensure_node() {
 
   if ! command -v node >/dev/null 2>&1; then
     warn "Homebrew install completed, but node is not on PATH."
+    return 1
+  fi
+
+  if ! has_supported_node; then
+    warn "Node.js ${MIN_NODE_VERSION} or newer is required. Check which node is on PATH and rerun the installer."
     return 1
   fi
 

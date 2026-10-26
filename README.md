@@ -6,6 +6,10 @@ Tagline: One command. Your Mac, optimized.
 
 ## Install
 
+Requires Node.js 22.12.0 or newer. If Node.js is already installed, update it
+before running the installer; the installer installs Node.js through Homebrew
+when it is missing.
+
 One-line installer:
 
 ```bash
