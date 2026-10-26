@@ -85,6 +85,92 @@ uninstall, or skip. Skipping an upgrade failure leaves it unresolved and
 preserves a nonzero exit status. Reinstall/removal only runs after an explicit
 interactive choice.
 
+## Cleaner
+
+Preview the cleanup plan before applying it:
+
+```bash
+node dist/index.js clean --mode deep --days 5 --dry-run
+node dist/index.js clean --mode deep --days 5 --dry-run --verbose
+node dist/index.js clean --verify
+```
+
+The cleaner scans explicit cache and log locations rather than sweeping every
+hidden directory. Deep mode also discovers Bun and npx package caches, Gradle
+temporary files, ignored project caches, user temporary files, and Trash.
+Chromium profiles and named Electron cache directories are covered; profile
+storage, unsaved editor backups, sessions, credentials, device backups, Xcode
+archives, simulator runtimes, and VM/emulator disks are preserved. Reinstallable
+browser binaries and managed tool runtimes are also protected. Use `your dev
+clean` separately when you intend to remove project dependency trees.
+
+`--days` applies to every ordinary cleanup target and its nested contents.
+A directory with recent contents is kept even if its own modification time is
+old. Paths with open files, active package-manager use, symlinks, another owner,
+nested Git repositories, unreadable contents, or incomplete size measurements
+are kept. Project caches must also be untracked and explicitly Git-ignored.
+The process snapshot and target identity are checked again before removal;
+filesystem scans are not atomic, so avoid starting builds during cleanup.
+
+The plan separates discovered disk usage, eligible cleanup size, kept paths,
+and tool-managed caches. Scan/measurement failures are reported as partial
+coverage, not empty folders. `--verbose` lists eligible paths, skipped paths,
+and inaccessible locations. Scans cover the configured locations, limit
+project traversal to ten levels, and cap each category at 5,000 matches.
+Preflight keeps any tree whose content inspection exceeds 50,000 entries.
+macOS privacy restrictions can still prevent access to some locations.
+
+By default, ordinary cleanup moves eligible paths to `~/.your-backups`; it does not
+immediately free disk space. Restore with `your undo restore <id>` or review
+`your backup prune --dry-run` when ready to permanently remove old backups.
+At the final interactive step, choose **Move to undo backup** (the default),
+**Permanently delete**, or **Cancel**. The choice applies only to that run.
+Permanent deletion removes eligible paths directly with the same safety checks,
+creates no undo backup, and cannot be undone through this CLI. The final
+confirmation includes the selected size and removal method. Use `--permanent`
+to select this mode from the command line; `-y` alone keeps backup enabled.
+
+```bash
+your clean --mode deep --days 5 --permanent --dry-run  # Preview only
+your clean --mode deep --days 5 --permanent            # Confirm direct deletion
+```
+
+Permanent mode reports observed free space on the home volume before and after
+removal. This measurement can include concurrent activity and APFS effects;
+selected size is not a promise of bytes freed.
+A dry run does not prompt, move files, prune caches, modify shell profiles, or
+create an undo backup. `--verify` checks discovery and retention using an
+isolated temporary fixture, without changing real caches or backup history.
+
+uv and Gradle shared caches are measured separately. Gradle retains control
+of its own dependency-cache lifecycle. uv pruning is an explicit, permanent
+operation using uv's locks and unreachable-object policy, independent of
+`--days` and the undo backup:
+
+```bash
+your clean --prune-uv --dry-run  # Preview only; does not invoke uv pruning
+your clean --prune-uv            # Separate confirmation before native pruning
+```
+
+The uv operation uses the standard `~/.cache/uv` and `~/Library/Caches/uv`
+locations, does not force locks, and fails rather than bypassing a busy cache.
+Its full cache size is not an estimate of what pruning will free.
+
+To keep additional paths, create `~/.your-config/cleaner-excludes.json` with a
+JSON array of absolute or home-relative paths. Exclusions protect both ordinary
+cleanup and native uv pruning; they cannot override built-in protections.
+If an existing exclusion file is invalid or unreadable, cleanup stops.
+
+```json
+["~/Library/Caches/app-to-keep", "~/Developer/work/.cache"]
+```
+
+References used to check cleanup behavior: [uv cache safety](https://docs.astral.sh/uv/concepts/cache/),
+[Gradle cache lifecycle](https://docs.gradle.org/current/userguide/directory_layout.html),
+[Bun cache layout](https://bun.sh/docs/pm/global-cache), and
+[Mole's exclusions and preview model](https://github.com/tw93/Mole#safety).
+Rules and implementation remain local to this project.
+
 ## Terminal UI
 
 All commands share `src/core/ui.ts` for human output, task status, prompts, and

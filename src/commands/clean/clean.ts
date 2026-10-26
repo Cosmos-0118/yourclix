@@ -18,7 +18,18 @@ export function registerClean(program: Command): void {
       .option("--safe", "legacy alias for basic mode")
       .option("--deep", "legacy alias for deep mode")
       .option("--system", "system-wide cleanup mode (advanced)")
-      .option("--days <days>", "delete only files older than this many days")
+      .option(
+        "--days <days>",
+        "keep paths containing anything modified within this many days",
+      )
+      .option(
+        "--prune-uv",
+        "also prune unreachable uv cache entries permanently (native locks; ignores --days)",
+      )
+      .option(
+        "--permanent",
+        "permanently delete eligible paths instead of backing them up",
+      )
       .option("--verify", "run cleaner self-check and exit")
       .option("-v, --verbose", "show full paths for skipped items and details")
       .option("--mode <mode>", "run level: basic | deep | system", "basic")
@@ -28,14 +39,15 @@ export function registerClean(program: Command): void {
 Examples:
   your clean --mode basic
   your clean --mode deep --days 14 --dry-run
+  your clean --prune-uv --dry-run
+  your clean --mode deep --days 14 --permanent --dry-run
   your clean --system -y
 `,
       ),
   ).action(async (options) => {
     const mode = resolveRunLevel(options);
     const dryRun = Boolean(options.dryRun);
-    const title =
-      `your clean · ${mode}` + (dryRun ? " · dry run" : "");
+    const title = `your clean · ${mode}` + (dryRun ? " · dry run" : "");
 
     await withIntroOutro(title, async () => {
       if (options.verify) {
@@ -57,6 +69,8 @@ Examples:
         dryRun: options.dryRun,
         yes: options.yes,
         verbose: Boolean(options.verbose),
+        pruneUv: Boolean(options.pruneUv),
+        permanent: Boolean(options.permanent),
       });
     });
   });

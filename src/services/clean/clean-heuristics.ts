@@ -21,6 +21,8 @@ export interface ValidatedDeletionCandidate {
   category: string;
   bytes: number;
   mtimeMs: number;
+  dev?: number;
+  ino?: number;
 }
 
 interface RetentionInput {
@@ -48,10 +50,16 @@ export function parseFixedRetentionDays(
     return undefined;
   }
 
-  const parsed = Number.parseInt(String(rawDays), 10);
-  if (!Number.isFinite(parsed)) {
+  const raw = String(rawDays).trim();
+  const parsed = Number(raw);
+  if (
+    !/^\d+$/.test(raw) ||
+    !Number.isSafeInteger(parsed) ||
+    parsed < 1 ||
+    parsed > 3650
+  ) {
     throw new Error(
-      "Invalid value for --days. Please provide a whole number.",
+      "Invalid value for --days. Please provide a whole number from 1 to 3650.",
     );
   }
 
@@ -68,7 +76,7 @@ export async function resolveRetentionDays(
 
   const defaultDays = getDefaultRetentionDays(input.mode);
   const selected = await numberPrompt(
-    `Delete items older than how many days for ${input.mode.toUpperCase()} cleanup?`,
+    `Keep items modified within how many days? (${input.mode})`,
     {
       defaultValue: defaultDays,
       min: 1,
@@ -125,7 +133,8 @@ export function getCleanerHeuristicSkipReason(
 
   const minAgeMs = policy.olderThanDays * 24 * 60 * 60 * 1000;
   if (
-    policy.ageGatedCategories.has(candidate.category) &&
+    (policy.ageGatedCategories.has("*") ||
+      policy.ageGatedCategories.has(candidate.category)) &&
     now - candidate.mtimeMs < minAgeMs
   ) {
     return `newer-than-${policy.olderThanDays}d`;

@@ -1,43 +1,29 @@
 import os from "node:os";
 import path from "node:path";
+import fg from "fast-glob";
 import type { RunLevel } from "../core/types.js";
+
+export interface CleanerScanContext {
+  home?: string;
+  tmpDir?: string;
+}
 
 export interface ScanCategory {
   category: string;
   risky: boolean;
   system?: boolean;
+  managedBy?: "uv" | "gradle";
   globs: string[];
 }
 
-function join(home: string, target: string): string {
-  return path.join(home, target);
-}
-
-/** Only scan OS-managed temporary roots, never an arbitrary TMPDIR such as /. */
-function isTrustedTemporaryRoot(tmpDir: string): boolean {
+/** Never turn an arbitrary TMPDIR (or its parent) into a cleanup root. */
+export function isTrustedTemporaryRoot(tmpDir: string): boolean {
   const resolved = path.resolve(tmpDir);
   return (
     resolved === "/tmp" ||
     resolved === "/private/tmp" ||
-    resolved.startsWith("/var/folders/")
+    /^\/(?:private\/)?var\/folders\/[^/]+\/[^/]+\/T$/.test(resolved)
   );
-}
-
-/** macOS TMPDIR is usually /var/folders/…/T and is supported by undo backups. */
-function userTmpStarGlob(): string | undefined {
-  const tmpDir = process.env.TMPDIR ?? "/tmp";
-  if (!isTrustedTemporaryRoot(tmpDir)) {
-    return undefined;
-  }
-  return path.join(tmpDir, "*");
-}
-
-function userQuickLookThumbGlob(): string | undefined {
-  const tmpDir = process.env.TMPDIR ?? "/tmp";
-  if (!isTrustedTemporaryRoot(tmpDir)) {
-    return undefined;
-  }
-  return path.join(tmpDir, "..", "C", "com.apple.QuickLook.thumbnailcache/*");
 }
 
 const projectRoots = [
@@ -50,311 +36,269 @@ const projectRoots = [
   "Repos",
   "workspace",
   "Workspaces",
-  "Desktop",
-  "Downloads",
+];
+const projectCaches = [
+  "coverage",
+  ".vite",
+  ".cache",
+  ".parcel-cache",
+  ".svelte-kit",
+  ".turbo",
+  ".next/cache",
+  "__pycache__",
+  ".pytest_cache",
+  ".mypy_cache",
+  ".ruff_cache",
+];
+const chromiumBrowsers = [
+  "Google/Chrome",
+  "Google/Chrome Beta",
+  "Chromium",
+  "BraveSoftware/Brave-Browser",
+  "Microsoft Edge",
+  "Vivaldi",
+];
+const electronApps = [
+  "Code",
+  "Code - Insiders",
+  "Cursor",
+  "Antigravity",
+  "Claude",
+  "Codex",
+  "com.openai.codex",
+  "Electron",
+  "Slack",
+  "discord",
+];
+// Explicit Chromium/Electron disposable leaves, never profile/session stores.
+const electronCaches = [
+  "Cache",
+  "Code Cache",
+  "GPUCache",
+  "DawnCache",
+  "DawnGraphiteCache",
+  "DawnWebGPUCache",
 ];
 
-function filterByRunLevel(
+export function getCleanerScanCategories(
   mode: RunLevel,
-  categories: ScanCategory[],
+  context: CleanerScanContext = {},
 ): ScanCategory[] {
-  return categories.filter((entry) => {
-    if (mode === "basic") {
-      return !entry.risky && !entry.system;
-    }
-
-    if (mode === "deep") {
-      return !entry.system;
-    }
-
-    return true;
-  });
-}
-
-export function getCleanerScanCategories(mode: RunLevel): ScanCategory[] {
-  const home = os.homedir();
-  const tmpStar = userTmpStarGlob();
-  const quickLookGlob = userQuickLookThumbGlob();
-
+  const home = context.home ?? os.homedir();
+  const tmpDir = context.tmpDir ?? os.tmpdir();
+  const j = (target: string) =>
+    `${fg.escapePath(path.resolve(home))}/${target}`;
+  const tmp = isTrustedTemporaryRoot(tmpDir)
+    ? `${fg.escapePath(path.resolve(tmpDir))}/*`
+    : undefined;
   const categories: ScanCategory[] = [
-    {
-      category: "User Cache",
-      risky: false,
-      globs: [join(home, "Library/Caches/*")],
-    },
+    { category: "User Cache", risky: false, globs: [j("Library/Caches/*")] },
     {
       category: "App Container Cache",
       risky: false,
       globs: [
-        join(home, "Library/Containers/*/Data/Library/Caches/*"),
-        join(home, "Library/Group Containers/*/Library/Caches/*"),
+        j("Library/Containers/*/Data/Library/Caches/*"),
+        j("Library/Group Containers/*/Library/Caches/*"),
       ],
     },
     {
       category: "User Logs",
       risky: false,
       globs: [
-        join(home, "Library/Logs/*"),
-        join(home, "Library/Containers/*/Data/Library/Logs/*"),
+        j("Library/Logs/*"),
+        j("Library/Containers/*/Data/Library/Logs/*"),
       ],
-    },
-    {
-      category: "Trash",
-      risky: false,
-      globs: [join(home, ".Trash/*")],
     },
     {
       category: "Browser Caches",
       risky: false,
       globs: [
-        join(home, "Library/Application Support/Google/Chrome/Default/Cache/*"),
-        join(
-          home,
-          "Library/Application Support/Google/Chrome/Default/Code Cache/*",
+        ...chromiumBrowsers.flatMap((browser) =>
+          electronCaches.map((cache) =>
+            j(
+              `Library/Application Support/${browser}/{Default,Profile *}/${cache}/*`,
+            ),
+          ),
         ),
-        join(
-          home,
-          "Library/Application Support/Google/Chrome/Default/GPUCache/*",
+        ...electronCaches.map((cache) =>
+          j(`Library/Application Support/com.operasoftware.Opera/${cache}/*`),
         ),
-        join(
-          home,
-          "Library/Application Support/Google/Chrome/Default/Service Worker/CacheStorage/*",
-        ),
-        join(
-          home,
-          "Library/Application Support/BraveSoftware/Brave-Browser/Default/Cache/*",
-        ),
-        join(
-          home,
-          "Library/Application Support/BraveSoftware/Brave-Browser/Default/Code Cache/*",
-        ),
-        join(
-          home,
-          "Library/Application Support/BraveSoftware/Brave-Browser/Default/GPUCache/*",
-        ),
-        join(
-          home,
-          "Library/Application Support/Microsoft Edge/Default/Cache/*",
-        ),
-        join(
-          home,
-          "Library/Application Support/Microsoft Edge/Default/Code Cache/*",
-        ),
-        join(
-          home,
-          "Library/Application Support/Microsoft Edge/Default/GPUCache/*",
-        ),
-        join(home, "Library/Application Support/Firefox/Profiles/*/cache2/*"),
-        join(
-          home,
-          "Library/Application Support/Firefox/Profiles/*/thumbnails/*",
-        ),
-        join(home, "Library/Safari/Favicon Cache/*"),
+        j("Library/Application Support/Firefox/Profiles/*/cache2/*"),
+        j("Library/Safari/Favicon Cache/*"),
       ],
     },
     {
       category: "Node and JS Caches",
       risky: false,
       globs: [
-        join(home, ".npm/_cacache/*"),
-        join(home, ".pnpm-store/*"),
-        join(home, "Library/pnpm/store/*"),
-        join(home, ".yarn/cache/*"),
-        join(home, ".cache/yarn/*"),
-        join(home, ".cache/node-gyp/*"),
-        join(home, ".cache/esbuild/*"),
-        join(home, ".cache/webpack/*"),
-        join(home, ".cache/vite/*"),
-        join(home, ".cache/nx/*"),
+        j(".npm/_cacache/*"),
+        j(".npm/_logs/*"),
+        j(".pnpm-store/*"),
+        j("Library/pnpm/store/*"),
+        j(".yarn/cache/*"),
+        j(".cache/yarn/*"),
+        j(".cache/node-gyp/*"),
+        j(".cache/esbuild/*"),
+        j(".cache/webpack/*"),
+        j(".cache/vite/*"),
+        j(".cache/nx/*"),
       ],
     },
+    {
+      category: "Bun Package Cache",
+      risky: true,
+      globs: [j(".bun/install/cache/*")],
+    },
+    { category: "npx Package Cache", risky: true, globs: [j(".npm/_npx/*")] },
     {
       category: "Python and Build Tool Caches",
       risky: false,
       globs: [
-        join(home, ".cache/pip/*"),
-        join(home, "Library/Caches/pip/*"),
-        join(home, "Library/Caches/pypoetry/*"),
-        join(home, "Library/Caches/pipenv/*"),
-        join(home, ".gradle/caches/*"),
-        join(home, ".gradle/daemon/*"),
-        join(home, ".gradle/native/*"),
-        join(home, ".m2/repository/*"),
-        join(home, ".ivy2/cache/*"),
-        join(home, ".cache/sbt/*"),
-        join(home, ".cache/bazel/*"),
-        join(home, "Library/Caches/CocoaPods/*"),
-        join(home, ".cocoapods/repos/*"),
-        join(home, ".carthage/Cache/*"),
-        join(home, "Library/Caches/org.carthage.CarthageKit/*"),
+        j(".cache/pip/*"),
+        j("Library/Caches/pip/*"),
+        j("Library/Caches/pypoetry/*"),
+        j("Library/Caches/pipenv/*"),
+        j(".ivy2/cache/*"),
+        j(".cache/sbt/*"),
+        j(".cache/bazel/*"),
+        j(".carthage/Cache/*"),
+        j("Library/Caches/CocoaPods/*"),
+        j("Library/Caches/org.carthage.CarthageKit/*"),
       ],
+    },
+    {
+      category: "uv Cache",
+      risky: false,
+      managedBy: "uv",
+      globs: [j(".cache/uv"), j("Library/Caches/uv")],
+    },
+    {
+      category: "Gradle Managed Cache",
+      risky: false,
+      managedBy: "gradle",
+      globs: [j(".gradle/caches")],
+    },
+    {
+      category: "Gradle Temporary Files",
+      risky: true,
+      globs: [j(".gradle/.tmp/*"), j(".gradle/daemon/*/*.out.log")],
+    },
+    {
+      category: "Android Download Cache",
+      risky: false,
+      globs: [j(".android/cache/*")],
     },
     {
       category: "Rust and Go Caches",
       risky: false,
       globs: [
-        join(home, ".cargo/registry/cache/*"),
-        join(home, ".cargo/git/checkouts/*"),
-        join(home, ".cache/go-build/*"),
-        join(home, "go/pkg/mod/cache/*"),
+        j(".cargo/registry/cache/*"),
+        j(".cache/go-build/*"),
+        j("go/pkg/mod/cache/download/*"),
       ],
     },
     {
       category: "Xcode and Simulator Caches",
       risky: false,
       globs: [
-        join(home, "Library/Developer/Xcode/DerivedData/*"),
-        join(home, "Library/Developer/Xcode/DerivedData/ModuleCache.noindex/*"),
-        join(home, "Library/Developer/Xcode/Logs/*"),
-        join(home, "Library/Developer/Xcode/Archives/*"),
-        join(home, "Library/Developer/Xcode/iOS DeviceSupport/*"),
-        join(home, "Library/Developer/Xcode/watchOS DeviceSupport/*"),
-        join(home, "Library/Developer/CoreSimulator/Caches/*"),
-        join(home, "Library/Developer/CoreSimulator/Logs/*"),
-        join(
-          home,
-          "Library/Developer/CoreSimulator/Devices/*/data/Library/Caches/*",
-        ),
-        join(home, "Library/Developer/CoreSimulator/Profiles/Runtimes/*"),
-        join(home, "Library/Caches/com.apple.dt.Xcode/*"),
+        j("Library/Developer/Xcode/DerivedData/*"),
+        j("Library/Developer/Xcode/Logs/*"),
+        j("Library/Developer/CoreSimulator/Caches/*"),
+        j("Library/Developer/CoreSimulator/Logs/*"),
+        j("Library/Developer/CoreSimulator/Devices/*/data/Library/Caches/*"),
       ],
     },
     {
-      category: "Editor and Tooling Caches",
+      category: "Editor and App Caches",
       risky: false,
       globs: [
-        join(home, "Library/Application Support/Code/Cache/*"),
-        join(home, "Library/Application Support/Code/CachedData/*"),
-        join(home, "Library/Application Support/Code/Crashpad/completed/*"),
-        join(
-          home,
-          "Library/Application Support/Code/Service Worker/CacheStorage/*",
+        ...electronApps.flatMap((app) =>
+          electronCaches.map((cache) =>
+            j(`Library/Application Support/${app}/${cache}/*`),
+          ),
         ),
-        join(home, "Library/Application Support/Cursor/Cache/*"),
-        join(home, "Library/Application Support/Cursor/CachedData/*"),
-        join(home, "Library/Application Support/JetBrains/*/caches/*"),
-        join(home, "Library/Application Support/JetBrains/*/index/*"),
-        join(home, "Library/Caches/JetBrains/*"),
+        ...["Code", "Code - Insiders", "Cursor", "Antigravity"].flatMap(
+          (app) => [
+            j(`Library/Application Support/${app}/CachedData/*`),
+            j(`Library/Application Support/${app}/logs/*`),
+          ],
+        ),
       ],
     },
     {
       category: "Package Manager Artifacts",
       risky: false,
       globs: [
-        join(home, "Library/Logs/Homebrew/*"),
-        join(home, ".cache/Homebrew/*"),
-        join(home, "Library/Caches/composer/*"),
-        join(home, ".composer/cache/*"),
-        join(home, ".gem/cache/*"),
+        j("Library/Logs/Homebrew/*"),
+        j(".cache/Homebrew/*"),
+        j("Library/Caches/composer/*"),
+        j(".composer/cache/*"),
+        j(".gem/cache/*"),
+      ],
+    },
+    // Credential and authentication token caches are deliberately excluded.
+    {
+      category: "Cloud CLI Logs",
+      risky: false,
+      globs: [
+        j(".config/gcloud/logs/*"),
+        j(".config/gcloud/access_logs/*"),
+        j(".config/gcloud/legacy_logs/*"),
       ],
     },
     {
-      category: "Cloud and CLI Caches",
+      category: "Container Download Caches",
       risky: false,
       globs: [
-        join(home, ".aws/cli/cache/*"),
-        join(home, ".azure/*/cache/*"),
-        join(home, ".config/gcloud/logs/*"),
-        join(home, ".config/gcloud/access_logs/*"),
-        join(home, ".config/gcloud/legacy_logs/*"),
-      ],
-    },
-    {
-      category: "Container and VM Caches",
-      risky: false,
-      globs: [
-        join(home, "Library/Caches/com.docker.docker/*"),
-        join(home, "Library/Logs/Docker Desktop/*"),
-        join(home, ".colima/_cache/*"),
-        join(home, ".lima/*/cache/*"),
+        j("Library/Caches/com.docker.docker/*"),
+        j("Library/Logs/Docker Desktop/*"),
+        j(".colima/_cache/*"),
       ],
     },
     {
       category: "Temporary Workspace Data",
       risky: true,
       globs: [
-        join(home, "Library/Application Support/CrashReporter/*"),
-        join(home, "Library/Logs/DiagnosticReports/*"),
-        join(home, "Library/Caches/com.apple.nsurlsessiond/*"),
-        join(home, "Library/Caches/com.apple.finder/*"),
-        ...(tmpStar ? [tmpStar] : []),
+        j("Library/Application Support/CrashReporter/*"),
+        ...(tmp ? [tmp] : []),
       ],
     },
     {
-      category: "Temporary and Crash Data",
-      risky: false,
-      globs: [
-        join(home, "Library/Caches/com.apple.Spotlight/*"),
-      ],
-    },
-    {
-      category: "Developer Project Junk",
+      category: "Developer Project Caches",
       risky: true,
-      globs: [
-        ...projectRoots.flatMap((root) => [
-          join(home, `${root}/**/node_modules`),
-          join(home, `${root}/**/dist`),
-          join(home, `${root}/**/build`),
-          join(home, `${root}/**/target`),
-          join(home, `${root}/**/.build`),
-          join(home, `${root}/**/out`),
-          join(home, `${root}/**/coverage`),
-          join(home, `${root}/**/.vite`),
-          join(home, `${root}/**/.cache`),
-          join(home, `${root}/**/.parcel-cache`),
-          join(home, `${root}/**/.svelte-kit`),
-          join(home, `${root}/**/.turbo`),
-          join(home, `${root}/**/.next/cache`),
-          join(home, `${root}/**/__pycache__`),
-          join(home, `${root}/**/.pytest_cache`),
-          join(home, `${root}/**/.mypy_cache`),
-        ]),
-      ],
+      globs: projectRoots.flatMap((root) =>
+        projectCaches.map((cache) => j(`${root}/**/${cache}`)),
+      ),
     },
+    { category: "Trash", risky: true, globs: [j(".Trash/*")] },
     {
-      category: "App Media Caches",
-      risky: false,
-      globs: [
-        join(home, "Library/Application Support/Slack/Cache/*"),
-        join(home, "Library/Application Support/Slack/Code Cache/*"),
-        join(home, "Library/Application Support/Slack/GPUCache/*"),
-        join(home, "Library/Application Support/discord/Cache/*"),
-        join(home, "Library/Application Support/discord/Code Cache/*"),
-        join(home, "Library/Application Support/discord/GPUCache/*"),
-        join(
-          home,
-          "Library/Application Support/Spotify/PersistentCache/Storage/*",
-        ),
-      ],
-    },
-    {
-      category: "Communications Attachments",
-      risky: true,
-      globs: [
-        join(home, "Library/Messages/Attachments/*"),
-        join(
-          home,
-          "Library/Containers/com.apple.mail/Data/Library/Mail Downloads/*",
-        ),
-        join(home, "Library/Mail/Attachments/*"),
-      ],
-    },
-    {
-      category: "iOS and Device Backups",
-      risky: true,
-      globs: [join(home, "Library/Application Support/MobileSync/Backup/*")],
-    },
-    {
-      category: "System Logs and Temp",
+      category: "System Diagnostic Reports",
       risky: true,
       system: true,
       globs: [
-        path.join("/", "Library/Logs/*"),
-        path.join("/", "private/var/log/*"),
-        ...(quickLookGlob ? [quickLookGlob] : []),
+        "/Library/Logs/DiagnosticReports/*.crash",
+        "/Library/Logs/DiagnosticReports/*.ips",
       ],
     },
   ];
+  return categories.filter((entry) =>
+    mode === "basic"
+      ? !entry.risky && !entry.system
+      : mode === "deep"
+        ? !entry.system
+        : true,
+  );
+}
 
-  return filterByRunLevel(mode, categories);
+/** Avoid walking dependencies, VCS data, runtimes, and backups for project caches. */
+export function getCleanerScanIgnores(home = os.homedir()): string[] {
+  const h = fg.escapePath(path.resolve(home));
+  return [
+    "**/node_modules/**",
+    "**/.git/**",
+    "**/.venv/**",
+    "**/venv/**",
+    "**/.your-backups/**",
+    `${h}/.your/**`,
+  ];
 }

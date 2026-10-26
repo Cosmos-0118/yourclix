@@ -1,5 +1,6 @@
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { RunLevel } from "../core/types.js";
 
 export interface CleanerHeuristicPolicy {
@@ -7,15 +8,9 @@ export interface CleanerHeuristicPolicy {
   olderThanDays: number;
   ageGatedCategories: Set<string>;
   protectedPaths: string[];
+  home: string;
+  tmpDir: string;
 }
-
-const AGE_GATED_CATEGORIES = new Set<string>([
-  "Temporary Workspace Data",
-  "Developer Project Junk",
-  "Communications Attachments",
-  "iOS and Device Backups",
-  "System Logs and Temp",
-]);
 
 export function getDefaultRetentionDays(mode: RunLevel): number {
   if (mode === "basic") {
@@ -42,14 +37,39 @@ export function normalizeRetentionDays(days: number, mode: RunLevel): number {
 export function buildCleanerHeuristicPolicy(
   mode: RunLevel,
   olderThanDays: number,
+  context: { home?: string; tmpDir?: string } = {},
 ): CleanerHeuristicPolicy {
-  const home = os.homedir();
+  const home = context.home ?? os.homedir();
+  const packageRoot = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../..",
+  );
   const protectedPaths = [
     // Protect the CLI's live dependency tree while it is running, but do not
     // treat the user's entire current project as untouchable. The old cwd
     // entry made `your clean` effectively a no-op whenever it was launched
     // from a developer repository.
     path.join(process.cwd(), "node_modules"),
+    path.join(packageRoot, "node_modules"),
+    path.join(packageRoot, "dist"),
+    path.join(home, ".your-backups"),
+    path.join(home, ".your"),
+    path.join(home, ".cache/codex-runtimes"),
+    path.join(home, ".cache/ms-playwright"),
+    path.join(home, ".cache/puppeteer"),
+    path.join(home, "Library/Caches/ms-playwright"),
+    path.join(home, "Library/Caches/puppeteer"),
+    path.join(home, ".cache/uv"),
+    path.join(home, "Library/Caches/uv"),
+    path.join(home, ".gradle/caches"),
+    path.join(home, ".m2/repository"),
+    path.join(home, ".android/avd"),
+    path.join(home, ".colima/default"),
+    path.join(home, "Library/Developer/Xcode/Archives"),
+    path.join(home, "Library/Developer/CoreSimulator/Profiles/Runtimes"),
+    path.join(home, "Library/Application Support/MobileSync"),
+    path.join(home, "Library/Messages"),
+    path.join(home, "Library/Mail"),
     path.join(home, ".vscode/extensions"),
     path.join(home, ".cursor/extensions"),
     path.join(home, "Library/Application Support/Code/User"),
@@ -61,8 +81,10 @@ export function buildCleanerHeuristicPolicy(
   return {
     mode,
     olderThanDays: normalizeRetentionDays(olderThanDays, mode),
-    ageGatedCategories: AGE_GATED_CATEGORIES,
+    ageGatedCategories: new Set(["*"]),
     protectedPaths,
+    home,
+    tmpDir: context.tmpDir ?? os.tmpdir(),
   };
 }
 
@@ -77,11 +99,13 @@ export function isProtectedCleanupPath(
       return true;
     }
 
-    const withSlash =
-      protectedRoot.endsWith(path.sep) ? protectedRoot : (
-        `${protectedRoot}${path.sep}`
-      );
+    const withSlash = protectedRoot.endsWith(path.sep)
+      ? protectedRoot
+      : `${protectedRoot}${path.sep}`;
     if (normalizedTarget.startsWith(withSlash)) {
+      return true;
+    }
+    if (protectedRoot.startsWith(`${normalizedTarget}${path.sep}`)) {
       return true;
     }
   }

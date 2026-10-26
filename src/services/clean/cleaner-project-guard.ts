@@ -11,10 +11,11 @@ import { runCommand } from "../../core/exec.js";
  */
 export async function getProjectArtifactSkipReason(
   targetPath: string,
+  homeDir = os.homedir(),
 ): Promise<string | null> {
-  const gitRoot = await findNearestGitRoot(targetPath);
+  const gitRoot = await findNearestGitRoot(targetPath, homeDir);
   if (!gitRoot) {
-    return null;
+    return "unverified-project-artifact";
   }
 
   const relativeTarget = path.relative(gitRoot, path.resolve(targetPath));
@@ -36,11 +37,24 @@ export async function getProjectArtifactSkipReason(
     return "git-check-failed";
   }
 
-  return result.stdout.trim() ? "tracked-project-artifact" : null;
+  if (result.stdout.trim()) return "tracked-project-artifact";
+  const ignored = await runCommand(
+    "git",
+    ["-C", gitRoot, "check-ignore", "-q", "--", relativeTarget],
+    { allowFailure: true },
+  );
+  return ignored.code === 0
+    ? null
+    : ignored.code === 1
+      ? "not-ignored-project-artifact"
+      : "git-check-failed";
 }
 
-async function findNearestGitRoot(targetPath: string): Promise<string | null> {
-  const home = path.resolve(os.homedir());
+async function findNearestGitRoot(
+  targetPath: string,
+  homeDir: string,
+): Promise<string | null> {
+  const home = path.resolve(homeDir);
   let current = path.resolve(targetPath);
 
   try {
@@ -52,10 +66,7 @@ async function findNearestGitRoot(targetPath: string): Promise<string | null> {
     current = path.dirname(current);
   }
 
-  while (
-    current === home ||
-    current.startsWith(`${home}${path.sep}`)
-  ) {
+  while (current === home || current.startsWith(`${home}${path.sep}`)) {
     try {
       await fs.lstat(path.join(current, ".git"));
       return current;

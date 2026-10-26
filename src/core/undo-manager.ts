@@ -114,6 +114,7 @@ class UndoManager {
     filesToBackup: string[],
     command: string,
     args: string[] = [],
+    beforeMove?: (filePath: string) => Promise<string | null>,
   ): Promise<CreateBackupResult> {
     await this.init();
 
@@ -163,6 +164,11 @@ class UndoManager {
           );
 
           await fs.mkdir(path.dirname(backupPath), { recursive: true });
+          const skipReason = await beforeMove?.(filePath);
+          if (skipReason) {
+            warnings.push(`Kept ${compactPath(filePath)}: ${skipReason}`);
+            continue;
+          }
           await fs.rename(filePath, backupPath);
           successCount += 1;
           totalBytes += itemBytes;

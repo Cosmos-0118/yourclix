@@ -19,7 +19,7 @@ const FEATURE_REQUIREMENTS: Record<string, Requirement[]> = {
       installHint: "Install Homebrew first or run setup to bootstrap.",
     },
   ],
-  clean: [{ command: "find", level: "required" }],
+  clean: [{ command: "du", level: "required" }, { command: "lsof", level: "required" }],
   "net fix": [
     { command: "route", level: "required" },
     { command: "arp", level: "required" },
@@ -70,7 +70,8 @@ async function commandExists(command: string): Promise<boolean> {
 export async function ensureFeatureRuntime(
   commandId: string,
 ): Promise<RuntimeCheckResult> {
-  await ensureManagedPath("your");
+  // A cleaner preview must not edit shell profiles or launch-service state.
+  if (commandId !== "clean") await ensureManagedPath("your");
 
   const requirements = FEATURE_REQUIREMENTS[commandId] ?? [];
   const missingRequired: Requirement[] = [];

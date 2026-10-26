@@ -1,79 +1,54 @@
-import { ui } from "../../core/ui.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import chalk from "chalk";
-import { CommandProgress } from "../../core/progress.js";
-import { pathSizeFast } from "../../core/fs-utils.js";
+import { ui } from "../../core/ui.js";
 import { bytesToHuman } from "../../core/format.js";
 import type { CleanerOptions } from "../../core/types.js";
-import { executeCleaner } from "./cleaner-execute.js";
+import { preflightCleaner } from "./cleaner-execute.js";
 import { scanCleanerTargets } from "./cleaner-scan.js";
 
+/** Verify discovery and retention in an isolated fixture, never real user caches. */
 export async function runCleanerSelfCheck(
   mode: CleanerOptions["mode"] = "basic",
 ): Promise<void> {
-  const testDir = path.join(os.homedir(), "Library/Caches/yourclix-selfcheck");
-  const testFile = path.join(testDir, "payload.bin");
-  const progress = new CommandProgress("Cleaner Self-Check", 5);
-
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), "yourclix-selfcheck-"));
+  const cache = path.join(home, "Library/Caches/test-app");
   try {
-    await progress.step("Creating temporary cache payload", async () => {
-      await fs.rm(testDir, { recursive: true, force: true });
-      await fs.mkdir(testDir, { recursive: true });
-      const payload = Buffer.alloc(4 * 1024 * 1024, 1);
-      await fs.writeFile(testFile, payload);
+    await ui.task("Create isolated cache fixture", async () => {
+      await fs.mkdir(cache, { recursive: true });
+      const payload = path.join(cache, "payload.bin");
+      await fs.writeFile(payload, Buffer.alloc(1024 * 1024, 1));
+      const old = new Date(Date.now() - 90 * 86400000);
+      await fs.utimes(payload, old, old);
+      await fs.utimes(cache, old, old);
     });
-
-    const createdBytes = await progress.step(
-      "Measuring test payload size",
-      async () => pathSizeFast(testDir),
+    const context = { home, tmpDir: home };
+    const results = await ui.task("Verify cache discovery", () =>
+      scanCleanerTargets(mode, {}, context),
     );
-    progress.info(`Test payload size: ${bytesToHuman(createdBytes)}`);
-
-    const scanResults = await progress.step("Running cleaner scan", async () =>
-      scanCleanerTargets(mode),
+    if (!results.some((result) => result.paths.includes(cache)))
+      throw new Error("Self-check: fixture was not discovered.");
+    const fixture = { context, activity: { paths: [], available: true } };
+    const check = await ui.task("Verify content retention", () =>
+      preflightCleaner(results, { mode, olderThanDays: 14 }, fixture),
     );
-    const foundInCategory = scanResults.find((entry) =>
-      entry.paths.includes(testDir),
-    );
-
-    if (!foundInCategory) {
+    if (!check.candidates.some((candidate) => candidate.path === cache))
       throw new Error(
-        "Self-check failed: test cache path was not detected by scanner.",
+        `Self-check: old fixture was not eligible (${check.skipped.map((item) => item.reason).join(", ")}).`,
       );
-    }
-
-    progress.info(`Detected in category: ${foundInCategory.category}`);
-
-    await progress.step("Executing targeted cleanup", async () =>
-      executeCleaner(
-        [
-          {
-            category: "Self-Check Test",
-            paths: [testDir],
-            bytes: createdBytes,
-          },
-        ],
-        { mode, dryRun: false, yes: true },
-      ),
+    await fs.writeFile(path.join(cache, "recent.bin"), "keep");
+    const recent = await preflightCleaner(
+      results,
+      { mode, olderThanDays: 14 },
+      fixture,
     );
-
-    await progress.step("Verifying deletion outcome", async () => {
-      const stillExists = await fs
-        .lstat(testDir)
-        .then(() => true)
-        .catch(() => false);
-
-      if (stillExists) {
-        throw new Error(
-          "Self-check failed: test cache path still exists after cleanup.",
-        );
-      }
-    });
-
-    ui.write(chalk.green("Cleaner self-check passed."));
+    if (recent.candidates.some((candidate) => candidate.path === cache))
+      throw new Error("Self-check: recent contents were not protected.");
+    ui.notice("Cleaner scan and safety self-check passed", [
+      `Verified ${bytesToHuman(check.eligibleBytes)} of fixture data; recent contents were kept.`,
+      "No real cache data or undo backups were changed.",
+    ]);
   } finally {
-    await fs.rm(testDir, { recursive: true, force: true });
+    await fs.rm(home, { recursive: true, force: true });
   }
 }

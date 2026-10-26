@@ -68,7 +68,7 @@ test("protected paths and retention-gated paths never become candidates", () => 
   );
   assert.equal(
     isProtectedCleanupPath(process.cwd(), policy.protectedPaths),
-    false,
+    true,
   );
 });
 

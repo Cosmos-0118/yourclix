@@ -10,6 +10,10 @@ export interface CleanerOptions extends GlobalOptions {
   olderThanDays?: number;
   /** Show full filesystem paths in skipped-item output */
   verbose?: boolean;
+  /** Opt in to uv's native, permanent unreachable-cache pruning. */
+  pruneUv?: boolean;
+  /** Explicitly delete eligible paths without an undo backup. Default is false. */
+  permanent?: boolean;
 }
 
 export interface FixContext {
@@ -33,6 +37,8 @@ export interface ScanResult {
   category: string;
   paths: string[];
   bytes: number;
+  managedBy?: "uv" | "gradle";
+  issues?: { path: string; reason: string }[];
 }
 
 export interface UndoOptions extends GlobalOptions {

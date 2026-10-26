@@ -111,7 +111,7 @@ export function wrapAnsiText(value: string, width: number): string[] {
     const indent = leading.slice(0, Math.max(0, safeWidth - 1));
     return wrapAnsi(line.slice(leading.length), safeWidth - indent.length, {
       hard: true,
-      wordWrap: false,
+      wordWrap: true,
       trim: true,
     })
       .split("\n")

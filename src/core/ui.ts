@@ -197,7 +197,8 @@ export class CliUI {
             : /^\s*Warning:/i.test(stripAnsi(line))
               ? this.colors.yellow
               : color;
-          return line.trim() ? `    ${style(line)}` : "";
+          const indent = line.match(/^ */)?.[0] ?? "";
+          return line.trim() ? `    ${indent}${style(line.slice(indent.length))}` : "";
         })
         .join("\n"),
     ]);

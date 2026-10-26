@@ -1,4 +1,4 @@
-import { ui } from "../../core/ui.js";
+import { ui, type CliUI } from "../../core/ui.js";
 import os from "node:os";
 import path from "node:path";
 import chalk from "chalk";
@@ -36,7 +36,10 @@ function reasonBreakdownLines(skipped: SkipRecord[]): string[] {
 
   return [...reasonCounts.entries()]
     .sort((a, b) => b[1] - a[1])
-    .map(([reason, count]) => `${chalk.dim("•")} ${formatSkipReasonShort(reason)}: ${count}`);
+    .map(
+      ([reason, count]) =>
+        `${chalk.dim("•")} ${formatSkipReasonShort(reason)}: ${count}`,
+    );
 }
 
 export function printSkippedBreakdown(skipped: SkipRecord[]): void {
@@ -47,7 +50,11 @@ export function printSkippedBreakdown(skipped: SkipRecord[]): void {
   ui.list("Skipped breakdown", reasonBreakdownLines(skipped));
 }
 
-export function printSkippedSummary(skipped: SkipRecord[], verbose: boolean): void {
+export function printSkippedSummary(
+  skipped: SkipRecord[],
+  verbose: boolean,
+  terminal: CliUI = ui,
+): void {
   if (skipped.length === 0) {
     return;
   }
@@ -64,26 +71,24 @@ export function printSkippedSummary(skipped: SkipRecord[], verbose: boolean): vo
         lines.push(chalk.dim(` ${count} under ${label}`));
       }
       if (buckets.length > 8) {
-        lines.push(chalk.dim(`… and ${pluralize(buckets.length - 8, "more location group")}`));
+        lines.push(
+          chalk.dim(
+            `… and ${pluralize(buckets.length - 8, "more location group")}`,
+          ),
+        );
       }
     }
-    ui.list(title, lines);
+    terminal.list(title, lines);
     return;
   }
 
-  const sample = skipped.slice(0, 12);
   lines.push("", chalk.dim("Paths:"));
-  for (const entry of sample) {
-    lines.push(`${compactPath(entry.path)} (${formatSkipReasonShort(entry.reason)})`);
-  }
-  if (skipped.length > sample.length) {
+  for (const entry of skipped) {
     lines.push(
-      chalk.dim(
-        `… ${skipped.length - sample.length} more (truncated; narrow scan with filters if needed)`,
-      ),
+      `${compactPath(entry.path)} (${formatSkipReasonShort(entry.reason)})`,
     );
   }
-  ui.list(title, lines);
+  terminal.list(title, lines);
 }
 
 export function summarizeSkippedInline(skipped: SkipRecord[]): string {
@@ -161,6 +166,18 @@ function formatSkipReasonShort(reason: string): string {
   if (reason === "protected-path") {
     return "protected";
   }
+  if (reason === "in-use") return "in use by a running process";
+  if (reason === "activity-check-unavailable")
+    return "could not verify active files";
+  if (reason === "symlink-path") return "symlink or linked parent";
+  if (reason === "size-unavailable") return "size could not be verified";
+  if (reason === "nested-project") return "contains a Git repository";
+  if (reason === "inspection-limit") return "content inspection limit reached";
+  if (
+    reason === "unverified-project-artifact" ||
+    reason === "not-ignored-project-artifact"
+  )
+    return "not a verified ignored project cache";
 
   if (reason.startsWith("newer-than-")) {
     const age = reason.replace("newer-than-", "");
